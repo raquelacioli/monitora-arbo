@@ -1,7 +1,10 @@
-pandas
-xlrd
-openpyxl
 streamlit
-PyJWT
+pandas
+pyrebase4
+google-cloud-storage
+setuptools
+xlrd
+odfpy
+openpyxl
 plotly
-
+python-calamine
