@@ -24,26 +24,29 @@ def login():
     st.title("🔐 Login - Monitora Arboviroses")
 
     # Captura o email e senha do usuário
-    email = st.text_input("Email")
-    password = st.text_input("Senha", type="password")
+    email = st.text_input("Email", key="login_email")
+    password = st.text_input("Senha", type="password", key="login_password")
 
-    # Se o login foi bem-sucedido, exibe a mensagem
-    if 'login_success' in st.session_state and st.session_state['login_success']:
-        st.success(f"Bem-vindo, {st.session_state['email']}!")
-        return
+    # Botão de login
+    login_button = st.button("Entrar")
 
-    # Tenta fazer login quando o botão é pressionado
-    if st.button("Entrar"):
+    # Se o botão foi clicado
+    if login_button:
         try:
             user = auth.sign_in_with_email_and_password(email, password)
+            # Salva usuário e email na sessão
             st.session_state['user'] = user
             st.session_state['email'] = email
             st.session_state['login_success'] = True
-            st.experimental_rerun()
+            st.rerun()  # reinicia a app com a sessão salva
         except Exception:
-            st.session_state['login_success'] = False
             st.error("Email ou senha inválidos.")
+            st.session_state['login_success'] = False
 
+    # Se já está logado, mostra mensagem de boas-vindas
+    elif st.session_state.get('login_success'):
+        st.success(f"Bem-vindo, {st.session_state['email']}!")
+        st.stop()
 
 # Função para download estilizado
 def download_dataframe(df, filename, label):
@@ -206,12 +209,11 @@ def logout():
 #         login() 
 #         st.stop()
 
-
-
-if 'user' not in st.session_state:
+if 'user' not in st.session_state or not st.session_state.get('login_success'):
     login()
-
+    st.stop()  # Impede que o resto da página seja carregado até o login
 else:
     logout()
-    # admin_panel(st.session_state['email']) 
     processamento(st.session_state['email'])
+
+
