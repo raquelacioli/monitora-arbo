@@ -5,28 +5,40 @@ import os
 from datetime import datetime
 
 def processar_arquivos(pasta):
-    # 1. Localizar todos os arquivos .xls na pasta 'arquivos/'
-    arquivos_xls = [os.path.join(pasta, f) for f in os.listdir(pasta) if f.endswith(".xls")]
+    # 1. Localizar todos os arquivos .xls .ods na pasta 'arquivos/'
+    arquivos_planilhas = [os.path.join(pasta, f) for f in os.listdir(pasta) if f.endswith((".xls", ".ods"))]
 
-    if not arquivos_xls:
-        raise ValueError("Nenhum arquivo .xls encontrado na pasta.")
+    if not arquivos_planilhas:
+        raise ValueError("Nenhum arquivo .xls ou .ods encontrado na pasta.")
 
-    # 2. Lista para armazenar DataFrames
+    # 2. Lista para armazenar DataFrames    
     dfs = []
 
     # 3. Iterar sobre cada arquivo e aplicar o processamento inicial
-    for caminho in arquivos_xls:
+    for caminho in arquivos_planilhas:
         print(f"Lendo: {caminho}")
         try:
-            df = pd.read_excel(caminho, engine='xlrd')
+            extensao = os.path.splitext(caminho)[1].lower()
 
+            if extensao == '.xls':
+                df = pd.read_excel(caminho, engine='xlrd')
+            elif extensao == '.ods':
+                try:
+                    df = pd.read_excel(caminho, engine='calamine')
+                except Exception as e1:
+                    print(f'Erro com engine=calamine: {e1}')
+                    try:
+                        df = pd.read_excel(caminho, engine='odf')
+                    except Exception as e2:
+                        print(f'Erro com engine=odf: {e2}')
+                        return None
             # # 4. Imprimir os nomes das colunas para depuração
             # print("Colunas no dataset:")
             # print(df.columns.tolist())
 
             # 5. Limpar os nomes das colunas: manter só o nome antes da vírgula
-            df = pd.read_excel(caminho, engine='xlrd')  # Ou use 'openpyxl' se for .xlsx
             df.columns = df.columns.str.split(',').str[0]
+            print("Colunas encontradas:", df.columns.tolist())
 
             # 6. Selecionar as colunas relevantes para análise
             columns_to_select = [
@@ -45,11 +57,14 @@ def processar_arquivos(pasta):
 
         except Exception as e:
             print(f"Erro ao ler {caminho}: {e}")
-            # 7. Concatenar todos os DataFrames
-            df = pd.concat(dfs, ignore_index=True)
+            continue
 
     if not dfs:
         raise ValueError("Nenhum arquivo pôde ser processado com sucesso.")
+    
+    # 7. Concatenar todos os DataFrames
+    df = pd.concat(dfs, ignore_index=True)
+
 
     # 8. Criar coluna MAPA para o Dashboard
     df['MAPA'] = df['NM_BAIRRO'] + ', BRASIL, PERNAMBUCO, RECIFE'
@@ -69,6 +84,8 @@ def processar_arquivos(pasta):
     df['NU_IDADE_N'] = df['NU_IDADE_N'] - 4000
     df['CS_RACA'] = df['CS_RACA'].map(raca_mapping)
     df['EVOLUCAO'] = df['EVOLUCAO'].map(evolucao_mapping)
+    df['DT_DIGITA'] = pd.to_datetime(df['DT_DIGITA'], errors='coerce')
+    df['DT_NOTIFIC'] = pd.to_datetime(df['DT_NOTIFIC'], errors='coerce')
     df['OPORTUNIDADE_SINAN'] = (df['DT_DIGITA'] - df['DT_NOTIFIC']).dt.days
 
 
@@ -92,7 +109,9 @@ def processar_arquivos(pasta):
     # 10. Formatar colunas de data no formato dd/mm/yyyy
     colunas_data = ['DT_NOTIFIC', 'DT_SIN_PRI', 'DT_NASC', 'DT_ENCERRA', 'DT_DIGITA']
     for col in colunas_data:
-        df[col] = df[col].dt.strftime('%d/%m/%Y')
+        df[col] = pd.to_datetime(df[col], errors='coerce')
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            df[col] = df[col].dt.strftime('%d/%m/%Y')
 
     # Filtra os casos onde a coluna 'DT_ENCERRA' está vazia (nula)
     casos_sem_encerramento = df[df['DT_ENCERRA'].isna()]
