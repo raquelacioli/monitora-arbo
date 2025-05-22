@@ -121,11 +121,11 @@ def processamento(user_email):
 
             st.subheader("🦠 Casos dos Últimos 60 Dias (VE)")
             st.dataframe(df_ve)
-            download_dataframe(df_ve, "chico_filtrado_ve.csv", "Download VE")
+            download_dataframe(df_ve, "chico_filtrado_ve.ods", "Download VE")
 
             st.subheader("🦠 Casos dos Últimos 30 Dias (VA)")
             st.dataframe(df_va)
-            download_dataframe(df_va, "chico_filtrado_va.csv", "Download VA")
+            download_dataframe(df_va, "chico_filtrado_va.ods", "Download VA")
 
             st.subheader("🦠 Casos sem encerramento")
             st.dataframe(df_casos_sem_encerramento)
@@ -146,7 +146,7 @@ def processamento(user_email):
                 df_ve = pd.read_excel(os.path.join(pasta_dados, "chico_filtrado_ve.xlsx"))
                 st.subheader("🦠 Casos dos Últimos 60 Dias (VE)")
                 st.dataframe(df_ve)
-                download_dataframe(df_ve, "chico_filtrado_ve.csv", "Download VE")
+                download_dataframe(df_ve, "chico_filtrado_ve.ods", "Download VE")
 
             
             st.subheader("🦠 Casos sem encerramento")
