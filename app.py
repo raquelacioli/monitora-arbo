@@ -94,7 +94,7 @@ def processamento(user_email):
     
     # Sempre mostra o upload
     if user_email != "vigilanciaambientalds7@gmail.com":
-        uploaded_files = st.file_uploader("📂 Envie um ou mais arquivos .xls ou .ods", type=["xls", "ods"], accept_multiple_files=True)
+        uploaded_files = st.file_uploader("📂 Envie um ou mais arquivos .xls , dbf ou .ods", type=["xls", "dbf" "ods"], accept_multiple_files=True)
     else:
         st.info("Você tem acesso apenas para visualização dos dados.")
         uploaded_files = None
@@ -121,15 +121,15 @@ def processamento(user_email):
 
             st.subheader("🦠 Casos dos Últimos 60 Dias (VE)")
             st.dataframe(df_ve)
-            download_dataframe(df_ve, "chico_filtrado_ve.csv", "Download VE")
+            download_dataframe(df_ve, "chico_filtrado_ve.ods", "Download VE")
 
             st.subheader("🦠 Casos dos Últimos 30 Dias (VA)")
             st.dataframe(df_va)
-            download_dataframe(df_va, "chico_filtrado_va.csv", "Download VA")
+            download_dataframe(df_va, "chico_filtrado_va.ods", "Download VA")
 
             st.subheader("🦠 Casos sem encerramento")
             st.dataframe(df_casos_sem_encerramento)
-            download_dataframe(df_casos_sem_encerramento, "casos_sem_encerramento.csv", "Casos sem encerramento")
+            download_dataframe(df_casos_sem_encerramento, "casos_sem_encerramento.ods", "Casos sem encerramento")
 
         except Exception as e:
             st.error(f"Erro ao processar os arquivos: {e}")
@@ -146,7 +146,7 @@ def processamento(user_email):
                 df_ve = pd.read_excel(os.path.join(pasta_dados, "chico_filtrado_ve.xlsx"))
                 st.subheader("🦠 Casos dos Últimos 60 Dias (VE)")
                 st.dataframe(df_ve)
-                download_dataframe(df_ve, "chico_filtrado_ve.csv", "Download VE")
+                download_dataframe(df_ve, "chico_filtrado_ve.ods", "Download VE")
 
             
             st.subheader("🦠 Casos sem encerramento")
