@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import pyrebase
 import base64
+import io
 import os
 import shutil
 import re
@@ -75,10 +76,25 @@ def logout():
 
 # --- Funções auxiliares ---
 def download_dataframe(df, filename, label):
-    csv = df.to_csv(index=False)
-    b64 = base64.b64encode(csv.encode()).decode()
+    # Cria um buffer de bytes na memória
+    output = io.BytesIO()
+    
+    # Usa o ExcelWriter para salvar o dataframe no buffer como um arquivo .xlsx
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Dados')
+    
+    # Pega os dados do buffer
+    excel_data = output.getvalue()
+    
+    # Codifica os dados em base64
+    b64 = base64.b64encode(excel_data).decode()
+    
+    # Garante que o nome do arquivo de download tenha a extensão .xlsx
+    new_filename = f"{os.path.splitext(filename)[0]}.xlsx"
+    
+    # Cria o link de download com o MIME type correto para .xlsx
     button_html = f"""
-    <a href="data:file/csv;base64,{b64}" download="{filename}">
+    <a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="{new_filename}">
         <button style="
             background-color: #4CAF50;
             border: none;
@@ -153,7 +169,7 @@ def processamento(user_email):
     # Upload habilitado apenas para usuários com permissão
     uploaded_files = None
     if not user_email == EMAIL_VA:
-        uploaded_files = st.file_uploader("📂 Envie arquivos .xls ou .ods", type=["xls", "ods"], accept_multiple_files=True)
+        uploaded_files = st.file_uploader("📂 Envie arquivos .xls, .ods, .odf ou .dbf", type=["xls", "ods", "odf", "dbf"], accept_multiple_files=True)
     else:
         st.info("Você tem acesso apenas para visualização dos dados.")
 
@@ -192,7 +208,7 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
     if df_ve is not None:
         st.subheader("🦠 Casos dos Últimos 60 Dias (VE)")
         st.dataframe(df_ve)
-        download_dataframe(df_ve, "chico_filtrado_ve.csv", "Download VE")
+        download_dataframe(df_ve, "chico_filtrado_ve.ods", "Download VE")
 
         st.subheader("📈 Gráfico - Casos VE por Semana Epidemiológica")
         plotar_casos_por_semana(df_ve, coluna_data='DT_NOTIFIC')
@@ -200,7 +216,7 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
     if df_va is not None:
         st.subheader("🦠 Casos dos Últimos 30 Dias (VA)")
         st.dataframe(df_va)
-        download_dataframe(df_va, "chico_filtrado_va.csv", "Download VA")
+        download_dataframe(df_va, "chico_filtrado_va.ods", "Download VA")
 
         st.subheader("📈 Gráfico - Casos VA por Semana Epidemiológica")
         plotar_casos_por_semana(df_va, coluna_data='DT_NOTIFIC')
@@ -208,7 +224,7 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
     if df_sem_encerramento is not None:
         st.subheader("🦠 Casos sem encerramento")
         st.dataframe(df_sem_encerramento)
-        download_dataframe(df_sem_encerramento, "casos_sem_encerramento.csv", "Casos sem encerramento")
+        download_dataframe(df_sem_encerramento, "casos_sem_encerramento.ods", "Casos sem encerramento")
 
     if df_sem_encerramento is not None:
         st.subheader("📊 Gráfico Geral - Casos por Semana Epidemiológica")

@@ -8,3 +8,4 @@ odfpy
 openpyxl
 plotly
 python-calamine
+simpledbf

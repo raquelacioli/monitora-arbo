@@ -1,14 +1,15 @@
 import pandas as pd
 import os
-
+from simpledbf import Dbf5
 from datetime import datetime
 
 def processar_arquivos(pasta):
     # 1. Localizar todos os arquivos .xls .ods na pasta 'arquivos/'
-    arquivos_planilhas = [os.path.join(pasta, f) for f in os.listdir(pasta) if f.endswith((".xls", ".ods"))]
+    arquivos_planilhas = [os.path.join(pasta, f) for f in os.listdir(pasta) if f.endswith((".xls", ".ods", ".odf", ".dbf"))]
 
     if not arquivos_planilhas:
-        raise ValueError("Nenhum arquivo .xls ou .ods encontrado na pasta.")
+        raise ValueError("Nenhum arquivo .xls, .ods ou .odf encontrado na pasta.")
+
 
     # 2. Lista para armazenar DataFrames    
     dfs = []
@@ -21,19 +22,33 @@ def processar_arquivos(pasta):
 
             if extensao == '.xls':
                 df = pd.read_excel(caminho, engine='xlrd')
-            elif extensao == '.ods':
+            elif extensao in ['.ods', '.odf']:
                 try:
                     df = pd.read_excel(caminho, engine='calamine')
-                except Exception as e1:
-                    print(f'Erro com engine=calamine: {e1}')
-                    try:
-                        df = pd.read_excel(caminho, engine='odf')
-                    except Exception as e2:
-                        print(f'Erro com engine=odf: {e2}')
-                        return None
+                except Exception:
+                    df = pd.read_excel(caminho, engine='odf')
+            elif extensao == '.dbf':
+                from simpledbf import Dbf5
+                dbf = Dbf5(caminho, codec='latin1')
+                df = dbf.to_dataframe()
+
+                # --- INÍCIO DO CÓDIGO DE DEPURAÇÃO ---
+                print("--- COLUNAS ENCONTRADAS NO ARQUIVO .DBF ---")
+                print(df.columns.tolist())
+                print("-------------------------------------------")
+                # --- FIM DO CÓDIGO DE DEPURAÇÃO ---
+                # Converte o arquivo .dbf para um DataFrame do pandas
+                # O codec 'latin1' é comum em arquivos de sistemas legados do Brasil
+                # dbf = Dbf5(caminho, codec='latin1')
+                # df = dbf.to_dataframe()
             # # 4. Imprimir os nomes das colunas para depuração
             # print("Colunas no dataset:")
             # print(df.columns.tolist())
+
+            df['NM_PACIENT'] = ''
+            df['NM_LOGRADO'] = ''
+            df['NU_NUMERO']  = ''
+            df['NM_COMPLEM'] = ''
 
             # 5. Limpar os nomes das colunas: manter só o nome antes da vírgula
             df.columns = df.columns.str.split(',').str[0]
