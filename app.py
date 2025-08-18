@@ -8,14 +8,14 @@ import shutil
 import re
 import time
 import json
-import pydeck as pdk  # fallback do mapa
+import pydeck as pdk
 from pathlib import Path
 
 from process_data import processar_arquivos
 from utils import plotar_casos_por_semana
 
 # ==============================
-# Configuração do Firebase
+# Firebase
 # ==============================
 FIREBASE_CONFIG = {
     "apiKey": "AIzaSyDjeRvV8yHAUmzDbiv2laM5tVM5iFXBByw",
@@ -68,19 +68,19 @@ try:
 except Exception: pass
 
 # ==============================
-# Paths (compatíveis com deploy)
+# Paths + fonte do contorno (assets/ ou URL)
 # ==============================
 BASE_DIR   = Path(__file__).resolve().parent
 DATA_DIR   = BASE_DIR / "dados_salvos"
 TEMP_DIR   = BASE_DIR / "temp_upload"
 ASSETS_DIR = BASE_DIR / "assets"
 
-DS7_SOURCE       = ASSETS_DIR / "ds7.geojson"       # versionado no repo
-DS7_GEOJSON_PATH = DATA_DIR   / "ds7.geojson"       # usado em runtime
-DS7_REMOTE_URL   = "https://raw.githubusercontent.com/SEU_USUARIO/SEU_REPO/main/assets/ds7.geojson"  # <-- TROQUE
+DS7_SOURCE       = ASSETS_DIR / "ds7.geojson"        # versionado no repo (recomendado)
+DS7_GEOJSON_PATH = DATA_DIR   / "ds7.geojson"        # usado em runtime
+DS7_REMOTE_URL   = ""  # ← Opcional: COLE AQUI a URL do ARQUIVO (Drive/GitHub). Ex.: "https://drive.google.com/file/d/FILE_ID/view?usp=sharing"
 
 # ==============================
-# Helpers de dados
+# Utilidades de dados
 # ==============================
 def remover_colunas_duplicadas(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or not isinstance(df, pd.DataFrame): return df
@@ -166,8 +166,7 @@ def serie_semanal_do_ano(df: pd.DataFrame, ano: int, data_col: str = "DT_NOTIFIC
 
 def plot_linha_semanal(df: pd.DataFrame, titulo: str):
     if df.empty:
-        st.info("Sem dados para o ano selecionado.")
-        return
+        st.info("Sem dados para o ano selecionado."); return
     if _HAS_ALTAIR:
         chart = (
             alt.Chart(df)  # type: ignore
@@ -240,24 +239,22 @@ def _ensure_latlon_rows(df_addr: pd.DataFrame, col_addr: str = "ENDERECO_BR") ->
     return merged.dropna(subset=["lat","lon"]).reset_index(drop=True)
 
 # ==============================
-# DS7: contorno/máscara + upload KML/GeoJSON
+# Contorno do DS VII (assets / URL / upload KML-GeoJSON)
 # ==============================
-def bootstrap_ds7_geojson():
-    """Copia assets/ds7.geojson -> dados_salvos/; se não houver, tenta baixar da URL."""
-    DS7_GEOJSON_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if DS7_GEOJSON_PATH.exists():
-        return
-    if DS7_SOURCE.exists():
-        shutil.copy(DS7_SOURCE, DS7_GEOJSON_PATH)
-        return
-    # fallback: baixa do GitHub (RAW)
-    try:
-        import requests  # type: ignore
-        r = requests.get(DS7_REMOTE_URL, timeout=15)
-        r.raise_for_status()
-        DS7_GEOJSON_PATH.write_bytes(r.content)
-    except Exception:
-        pass  # sem contorno -> mapa exibirá só pontos
+def drive_share_to_direct(url: str) -> str:
+    """Converte link de compartilhamento do Drive em link direto."""
+    if not url: return url
+    m = re.search(r"/d/([A-Za-z0-9_-]{20,})", url)
+    if m: return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    m = re.search(r"[?&]id=([A-Za-z0-9_-]{20,})", url)
+    if m: return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    return url
+
+def _fetch_bytes_from_url(url: str, timeout: int = 20) -> bytes:
+    import requests  # requer requests no requirements.txt
+    r = requests.get(url, timeout=timeout)
+    r.raise_for_status()
+    return r.content
 
 def kml_to_geojson_bytes_fastkml(kml_bytes: bytes) -> bytes:
     if not _HAS_FASTKML or not _HAS_SHAPELY:
@@ -277,11 +274,10 @@ def kml_to_geojson_bytes_fastkml(kml_bytes: bytes) -> bytes:
             if hasattr(obj, "features"):
                 _walk(list(obj.features()))
     _walk(list(k.features()))
-    fc = {"type": "FeatureCollection", "features": feats}
-    return json.dumps(fc, ensure_ascii=False).encode("utf-8")
+    return json.dumps({"type":"FeatureCollection","features":feats}, ensure_ascii=False).encode("utf-8")
 
 def kml_to_geojson_bytes_stdlib(kml_bytes: bytes) -> bytes:
-    """Fallback sem dependências: extrai Polygons (anel externo)."""
+    """Fallback sem libs externas: extrai polígonos do KML."""
     import xml.etree.ElementTree as ET, re as _re, json as _json
     root = ET.fromstring(kml_bytes)
     m = _re.match(r"\{(.+)\}", root.tag)
@@ -307,14 +303,48 @@ def kml_to_geojson_bytes_stdlib(kml_bytes: bytes) -> bytes:
             if ring and ring[0] != ring[-1]: ring.append(ring[0])
             if len(ring) >= 4:
                 feats.append({
-                    "type": "Feature",
-                    "properties": {"name": name or None, "description": desc or None},
-                    "geometry": {"type": "Polygon", "coordinates": [ring]}
+                    "type":"Feature",
+                    "properties":{"name":name or None,"description":desc or None},
+                    "geometry":{"type":"Polygon","coordinates":[ring]}
                 })
     return _json.dumps({"type":"FeatureCollection","features":feats}, ensure_ascii=False).encode("utf-8")
 
+def bootstrap_ds7_geojson():
+    """Garante o contorno do DS7:
+       1) usa assets/ds7.geojson; 2) ou baixa de DS7_REMOTE_URL (Drive/GitHub);
+       3) aceita GeoJSON direto ou KML (converte)."""
+    DS7_GEOJSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if DS7_GEOJSON_PATH.exists():  # já tem
+        return
+    if DS7_SOURCE.exists():        # do repo
+        shutil.copy(DS7_SOURCE, DS7_GEOJSON_PATH)
+        return
+    if DS7_REMOTE_URL:             # remoto
+        try:
+            url = drive_share_to_direct(DS7_REMOTE_URL)
+            raw = _fetch_bytes_from_url(url)
+            # tenta GeoJSON
+            try:
+                _ = json.loads(raw.decode("utf-8"))
+                DS7_GEOJSON_PATH.write_bytes(raw)
+                return
+            except Exception:
+                pass
+            # tenta KML (fallback stdlib)
+            try:
+                gj = kml_to_geojson_bytes_stdlib(raw)
+                DS7_GEOJSON_PATH.write_bytes(gj)
+                return
+            except Exception:
+                if _HAS_FASTKML and _HAS_SHAPELY:
+                    gj = kml_to_geojson_bytes_fastkml(raw)
+                    DS7_GEOJSON_PATH.write_bytes(gj)
+                    return
+        except Exception:
+            pass  # segue sem contorno
+
 def salvar_ds7_upload_qualquer(file):
-    """Aceita GeoJSON/JSON/KML. Se KML: converte para GeoJSON (tenta fastkml; cai no stdlib)."""
+    """Aceita GeoJSON/JSON/KML. Se KML: converte para GeoJSON."""
     if file is None: return None
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     name = file.name.lower()
@@ -351,6 +381,7 @@ def carregar_geojson_filtrado(path: Path, campo=None, valor=None):
 def folium_add_ds7(m, geojson_path: Path = DS7_GEOJSON_PATH, campo=None, valor="VII", mascara=True):
     if not geojson_path.exists() or not _HAS_FOLIUM: return
     gj = carregar_geojson_filtrado(geojson_path, campo, valor)
+    # máscara (se shapely disponível)
     if mascara and _HAS_SHAPELY:
         geoms = [shape(ft["geometry"]) for ft in gj.get("features", [])]
         if geoms:
@@ -363,6 +394,7 @@ def folium_add_ds7(m, geojson_path: Path = DS7_GEOJSON_PATH, campo=None, valor="
                 style_function=lambda x: {"fillColor":"#000000","color":"#000000","fillOpacity":0.5,"weight":0},
                 control=False
             ).add_to(m)
+    # contorno/preenchimento leve
     folium.GeoJson(  # type: ignore
         gj, name="DS7 - contorno",
         style_function=lambda x: {"color":"#d00000","weight":2,"fillColor":"#d00000","fillOpacity":0.05}
@@ -394,6 +426,7 @@ def plot_mapa_pontos(df_addr: pd.DataFrame, col_addr: str = "ENDERECO_BR", titul
         return
     c_lat = float(pontos["lat"].mean()); c_lon = float(pontos["lon"].mean()); n = len(pontos)
 
+    # Folium (preferencial)
     if _HAS_FOLIUM:
         try:
             m = folium.Map(location=[c_lat,c_lon], zoom_start=12, tiles="cartodbpositron")  # type: ignore
@@ -415,6 +448,7 @@ def plot_mapa_pontos(df_addr: pd.DataFrame, col_addr: str = "ENDERECO_BR", titul
         except Exception as e:
             st.warning(f"Folium indisponível, usando PyDeck. Detalhe: {e}")
 
+    # PyDeck (fallback)
     st.subheader(f"🗺️ {titulo} (total: {n})")
     pts = pontos.rename(columns={"lon":"longitude","lat":"latitude"})
     layers = [pdk.Layer("ScatterplotLayer", data=pts, get_position='[longitude, latitude]',
@@ -498,8 +532,7 @@ def logout():
         """, unsafe_allow_html=True)
     with col2:
         if st.button("🔒 Sair"):
-            st.session_state.clear()
-            st.rerun()
+            st.session_state.clear(); st.rerun()
 
 # ==============================
 # Auxiliares de UI
@@ -540,7 +573,7 @@ def admin_panel(user_email):
 # Processamento / Exibição
 # ==============================
 def processamento(user_email):
-    bootstrap_ds7_geojson()  # garante contorno no deploy
+    bootstrap_ds7_geojson()  # prepara contorno (assets/ ou URL)
 
     st.title("📊 Painel de Dados")
     if pode_editar(user_email):
@@ -563,12 +596,9 @@ def processamento(user_email):
                 f.write(file.getbuffer())
         try:
             df_ve, df_va, df_sem_encerramento = processar_arquivos(str(TEMP_DIR))
-            df_ve = remover_colunas_duplicadas(df_ve)
-            df_va = remover_colunas_duplicadas(df_va)
-            df_sem_encerramento = remover_colunas_duplicadas(df_sem_encerramento)
-            df_ve = adicionar_endereco_br(df_ve)
-            df_va = adicionar_endereco_br(df_va)
-            df_sem_encerramento = adicionar_endereco_br(df_sem_encerramento)
+            df_ve = adicionar_endereco_br(remover_colunas_duplicadas(df_ve))
+            df_va = adicionar_endereco_br(remover_colunas_duplicadas(df_va))
+            df_sem_encerramento = adicionar_endereco_br(remover_colunas_duplicadas(df_sem_encerramento))
             df_va = filtrar_por_ultimos_dias(df_va, "DT_NOTIFIC", 15)  # VA = 15 dias
             if pode_editar(user_email):
                 df_ve.to_excel(DATA_DIR / "chico_filtrado_ve.xlsx", index=False, engine='openpyxl')
@@ -610,15 +640,16 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
         st.session_state["ds7_campo"] = campo
         st.session_state["ds7_valor"] = valor
         if not DS7_GEOJSON_PATH.exists():
-            st.info("Dica: inclua `assets/ds7.geojson` no repositório ou informe `DS7_REMOTE_URL` para fallback.")
+            st.info("Dica: inclua `assets/ds7.geojson` no repositório ou preencha `DS7_REMOTE_URL` com o link do arquivo (Drive/GitHub).")
         if not _HAS_SHAPELY:
-            st.caption("Sem shapely → contorno aparece, mas **sem** máscara. Instale: `python -m pip install shapely`")
+            st.caption("Sem shapely → contorno aparece, mas **sem** máscara cinza. (opcional)")
 
+    # Diagnóstico opcional
     with st.expander("🔧 Diagnóstico do ambiente (opcional)", expanded=False):
         import sys, pkgutil
         st.write("Python:", sys.version)
         st.write("Exe:", sys.executable)
-        for pkg in ["folium","streamlit_folium","geopy","shapely","fastkml","altair"]:
+        for pkg in ["folium","streamlit_folium","geopy","shapely","fastkml","altair","requests"]:
             st.write(f"{pkg}?", pkgutil.find_loader(pkg) is not None)
 
     if df_ve is not None:
