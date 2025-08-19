@@ -77,7 +77,9 @@ ASSETS_DIR = BASE_DIR / "assets"
 
 DS7_SOURCE       = ASSETS_DIR / "ds7.geojson"        # versionado no repo (recomendado)
 DS7_GEOJSON_PATH = DATA_DIR   / "ds7.geojson"        # usado em runtime
-DS7_REMOTE_URL   = ""  # ← Opcional: COLE AQUI a URL do ARQUIVO (Drive/GitHub). Ex.: "https://drive.google.com/file/d/FILE_ID/view?usp=sharing"
+
+# >>>>>>> URL RAW CORRETA DO GITHUB (usa seu repositório público)
+DS7_REMOTE_URL   = "https://raw.githubusercontent.com/raquelacioli/monitora-arbo/main/assets/ds7.geojson"
 
 # ==============================
 # Utilidades de dados
@@ -251,7 +253,7 @@ def drive_share_to_direct(url: str) -> str:
     return url
 
 def _fetch_bytes_from_url(url: str, timeout: int = 20) -> bytes:
-    import requests  # requer requests no requirements.txt
+    import requests  # requer 'requests' no requirements.txt
     r = requests.get(url, timeout=timeout)
     r.raise_for_status()
     return r.content
@@ -310,38 +312,55 @@ def kml_to_geojson_bytes_stdlib(kml_bytes: bytes) -> bytes:
     return _json.dumps({"type":"FeatureCollection","features":feats}, ensure_ascii=False).encode("utf-8")
 
 def bootstrap_ds7_geojson():
-    """Garante o contorno do DS7:
-       1) usa assets/ds7.geojson; 2) ou baixa de DS7_REMOTE_URL (Drive/GitHub);
-       3) aceita GeoJSON direto ou KML (converte)."""
+    """
+    Garante o contorno do DS7 em dados_salvos/ds7.geojson.
+    Ordem: assets/ → URL remota (GitHub/Drive). Aceita GeoJSON ou KML (converte).
+    Também escreve um status em st.session_state['ds7_status'].
+    """
     DS7_GEOJSON_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if DS7_GEOJSON_PATH.exists():  # já tem
+
+    if DS7_GEOJSON_PATH.exists():
+        st.session_state['ds7_status'] = f"OK: contorno já existe em {DS7_GEOJSON_PATH}"
         return
-    if DS7_SOURCE.exists():        # do repo
+
+    if DS7_SOURCE.exists():
         shutil.copy(DS7_SOURCE, DS7_GEOJSON_PATH)
+        st.session_state['ds7_status'] = "OK: contorno carregado de assets/ds7.geojson"
         return
-    if DS7_REMOTE_URL:             # remoto
+
+    if DS7_REMOTE_URL:
         try:
-            url = drive_share_to_direct(DS7_REMOTE_URL)
+            url = drive_share_to_direct(DS7_REMOTE_URL)  # funciona p/ GitHub e Drive
             raw = _fetch_bytes_from_url(url)
-            # tenta GeoJSON
+
+            # tenta GeoJSON direto
             try:
-                _ = json.loads(raw.decode("utf-8"))
+                json.loads(raw.decode("utf-8"))
                 DS7_GEOJSON_PATH.write_bytes(raw)
+                st.session_state['ds7_status'] = "OK: contorno baixado (GeoJSON remoto)"
                 return
             except Exception:
                 pass
+
             # tenta KML (fallback stdlib)
             try:
                 gj = kml_to_geojson_bytes_stdlib(raw)
                 DS7_GEOJSON_PATH.write_bytes(gj)
+                st.session_state['ds7_status'] = "OK: contorno baixado (KML remoto convertido)"
                 return
             except Exception:
                 if _HAS_FASTKML and _HAS_SHAPELY:
                     gj = kml_to_geojson_bytes_fastkml(raw)
                     DS7_GEOJSON_PATH.write_bytes(gj)
+                    st.session_state['ds7_status'] = "OK: contorno baixado (KML remoto convertido c/ fastkml)"
                     return
-        except Exception:
-            pass  # segue sem contorno
+
+            st.session_state['ds7_status'] = "ERRO: baixei a URL mas não reconheci GeoJSON/KML"
+        except Exception as e:
+            st.session_state['ds7_status'] = f"ERRO: não consegui baixar a URL ({e})"
+            return
+
+    st.session_state['ds7_status'] = "FALTA: sem assets/ds7.geojson e sem DS7_REMOTE_URL"
 
 def salvar_ds7_upload_qualquer(file):
     """Aceita GeoJSON/JSON/KML. Se KML: converte para GeoJSON."""
@@ -575,6 +594,13 @@ def admin_panel(user_email):
 def processamento(user_email):
     bootstrap_ds7_geojson()  # prepara contorno (assets/ ou URL)
 
+    # Mostra status do contorno no topo
+    status = st.session_state.get('ds7_status')
+    if status:
+        (st.success if status.startswith("OK")
+         else st.error if status.startswith("ERRO")
+         else st.warning)(status)
+
     st.title("📊 Painel de Dados")
     if pode_editar(user_email):
         if st.button("🗑️ Apagar dados", help="Remove todos os arquivos já salvos"):
@@ -640,7 +666,7 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
         st.session_state["ds7_campo"] = campo
         st.session_state["ds7_valor"] = valor
         if not DS7_GEOJSON_PATH.exists():
-            st.info("Dica: inclua `assets/ds7.geojson` no repositório ou preencha `DS7_REMOTE_URL` com o link do arquivo (Drive/GitHub).")
+            st.info("Dica: inclua `assets/ds7.geojson` no repositório ou use a URL RAW (já configurada).")
         if not _HAS_SHAPELY:
             st.caption("Sem shapely → contorno aparece, mas **sem** máscara cinza. (opcional)")
 
