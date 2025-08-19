@@ -79,7 +79,7 @@ DS7_SOURCE       = ASSETS_DIR / "ds7.geojson"        # versionado no repo (recom
 DS7_GEOJSON_PATH = DATA_DIR   / "ds7.geojson"        # usado em runtime
 
 # >>>>>>> URL RAW CORRETA DO GITHUB (usa seu repositório público)
-DS7_REMOTE_URL   = "https://raw.githubusercontent.com/raquelacioli/monitora-arbo/main/assets/ds7.geojson"
+DS7_REMOTE_URL = "https://raw.githubusercontent.com/raquelacioli/monitora-arbo/main/assets/ds7.geojson"
 
 # ==============================
 # Utilidades de dados
