@@ -9,3 +9,6 @@ openpyxl
 plotly
 python-calamine
 simpledbf
+requests
+folium
+streamlit-folium
