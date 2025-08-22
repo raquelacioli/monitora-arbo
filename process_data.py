@@ -79,10 +79,6 @@ def processar_arquivos(pasta):
     # 7. Concatenar todos os DataFrames
     df = pd.concat(dfs, ignore_index=True)
 
-
-    # 8. Criar coluna MAPA para o Dashboard
-    df['MAPA'] = df['NM_BAIRRO'] + ', BRASIL, PERNAMBUCO, RECIFE'
-
     # 9. Mapear os códigos para valores legíveis
     criterio_mapping = {
         1: 'Laboratório', 2: 'Clínico Epidemiológico', 3: 'Em investigação', 0: 'Em branco'
@@ -117,8 +113,8 @@ def processar_arquivos(pasta):
 
     data_atual = pd.to_datetime(datetime.today())
 
-    df_ve = df[df['DT_NOTIFIC'] >= (data_atual - pd.Timedelta(days=60))].copy()
-    df_va = df[df['DT_NOTIFIC'] >= (data_atual - pd.Timedelta(days=30))].copy()
+    df_ve = df[df['DT_SIN_PRI'] >= (data_atual - pd.Timedelta(days=60))].copy()
+    df_va = df[df['DT_SIN_PRI'] >= (data_atual - pd.Timedelta(days=15))].copy()
 
     # 10. Formatar colunas de data no formato dd/mm/yyyy
     colunas_data = ['DT_NOTIFIC', 'DT_SIN_PRI', 'DT_NASC', 'DT_ENCERRA', 'DT_DIGITA']
