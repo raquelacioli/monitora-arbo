@@ -12,7 +12,7 @@ import pydeck as pdk
 from pathlib import Path
 
 from process_data import processar_arquivos
-from utils import plotar_casos_por_semana
+# REMOVIDO: from utils import plotar_casos_por_semana
 
 # ==============================
 # Firebase
@@ -141,49 +141,6 @@ def formatar_datas_para_str_ddmmaaaa(df: pd.DataFrame) -> pd.DataFrame:
             s = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
             df[col] = s.dt.strftime("%d/%m/%Y")
     return df
-
-# ==============================
-# Epidemiologia (semanas ISO)
-# ==============================
-def add_epi_cols(df: pd.DataFrame, data_col: str = "DT_NOTIFIC") -> pd.DataFrame:
-    if df is None or data_col not in df.columns: return df
-    df = df.copy()
-    datas = pd.to_datetime(df[data_col], errors="coerce", dayfirst=True)
-    iso = datas.dt.isocalendar()
-    df["ANO_ISO"] = iso["year"].astype("Int64")
-    df["SEMANA_ISO"] = iso["week"].astype("Int64")
-    df["MES"] = datas.dt.month.astype("Int64")
-    return df
-
-def serie_semanal_do_ano(df: pd.DataFrame, ano: int, data_col: str = "DT_NOTIFIC") -> pd.DataFrame:
-    if df is None: return pd.DataFrame(columns=["SEMANA_ISO","casos"])
-    tmp = add_epi_cols(df, data_col)
-    tmp = tmp[tmp["ANO_ISO"] == ano]
-    if tmp.empty: return pd.DataFrame(columns=["SEMANA_ISO","casos"])
-    agg = tmp.groupby("SEMANA_ISO", dropna=True).size().rename("casos").reset_index()
-    full = pd.DataFrame({"SEMANA_ISO": list(range(1,54))})
-    out = full.merge(agg, on="SEMANA_ISO", how="left").fillna({"casos":0})
-    out["casos"] = out["casos"].astype(int)
-    return out
-
-def plot_linha_semanal(df: pd.DataFrame, titulo: str):
-    if df.empty:
-        st.info("Sem dados para o ano selecionado."); return
-    if _HAS_ALTAIR:
-        chart = (
-            alt.Chart(df)  # type: ignore
-            .mark_line(point=True)
-            .encode(
-                x=alt.X("SEMANA_ISO:Q", title="Semana Epidemiológica (ISO)"),
-                y=alt.Y("casos:Q", title="Casos"),
-                tooltip=["SEMANA_ISO","casos"]
-            )
-            .properties(width="container", height=280, title=titulo)
-        )
-        st.altair_chart(chart, use_container_width=True)
-    else:
-        st.subheader(titulo)
-        st.line_chart(df.set_index("SEMANA_ISO")["casos"])
 
 # ==============================
 # Geocache + geocodificação
@@ -483,43 +440,75 @@ def plot_mapa_pontos(df_addr: pd.DataFrame, col_addr: str = "ENDERECO_BR", titul
     st.pydeck_chart(pdk.Deck(initial_view_state=view_state, layers=layers, map_style=None))
 
 # ==============================
-# UI: linha por semana (ano corrente) + mapa por semana
+# NOVA VISUALIZAÇÃO (sem semana epidemiológica)
 # ==============================
-def bloco_ano_corrente(df: pd.DataFrame, nome_bloco: str, data_col: str = "DT_NOTIFIC"):
-    if df is None or not isinstance(df, pd.DataFrame) or df.empty: return
-    ano_ref = pd.Timestamp.today().year
-    base = add_epi_cols(df, data_col)
-    base_ano = base[base["ANO_ISO"] == ano_ref].copy()
+def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
+    with st.expander("🧭 Máscara/contorno do DS VII (opcional)"):
+        up = st.file_uploader("Envie o GeoJSON **ou KML** dos Distritos Sanitários do Recife",
+                              type=["geojson","json","kml"], key="up_ds7_geojson")
+        campo = st.text_input("Campo para filtrar o DS VII (ex.: DS, NUM_DS, NOME, name)", value="DS")
+        valor = st.text_input("Valor do DS VII nesse campo (ex.: VII, 7, Distrito Sanitário VII)", value="VII")
+        if up is not None:
+            try:
+                saved = salvar_ds7_upload_qualquer(up)
+                st.success(f"Arquivo salvo/convertido em: {saved}")
+            except Exception as e:
+                st.error(f"Não consegui preparar o arquivo: {e}")
+        st.session_state["ds7_campo"] = campo
+        st.session_state["ds7_valor"] = valor
+        if not DS7_GEOJSON_PATH.exists():
+            st.info("Dica: inclua `assets/ds7.geojson` no repositório ou use a URL RAW (já configurada).")
+        if not _HAS_SHAPELY:
+            st.caption("Sem shapely → contorno aparece, mas **sem** máscara cinza. (opcional)")
 
-    st.markdown(f"### 📆 {nome_bloco}: {ano_ref} — Casos por Semana Epidemiológica")
-    serie = serie_semanal_do_ano(base, ano_ref, data_col)
-    plot_linha_semanal(serie, f"Total de casos por Semana Epidemiológica — {ano_ref}")
+    # Diagnóstico opcional
+    with st.expander("🔧 Diagnóstico do ambiente (opcional)", expanded=False):
+        import sys, pkgutil
+        st.write("Python:", sys.version)
+        st.write("Exe:", sys.executable)
+        for pkg in ["folium","streamlit_folium","geopy","shapely","fastkml","altair","requests"]:
+            st.write(f"{pkg}?", pkgutil.find_loader(pkg) is not None)
 
-    if base_ano.empty:
-        st.info(f"Sem registros com {data_col} em {ano_ref}."); return
+    # =======================
+    # VE — últimos 60 dias
+    # =======================
+    if df_ve is not None and not df_ve.empty:
+        total_ve = len(df_ve)
+       # col1, col2 = st.columns(2)
+        #with col1:
+        st.subheader("🦠 Vigilância Epidemiológica (VE) — Últimos 60 dias")
+        st.metric("Total de casos no período", f"{total_ve}")
+        #with col2:
+        st.caption("Amostra dos dados (últimos 60 dias)")
+        st.dataframe(formatar_datas_para_str_ddmmaaaa(df_ve).head(200), use_container_width=True)
 
-    col_m, col_s = st.columns([1,2])
-    with col_m:
-        meses_disp = sorted(base_ano["MES"].dropna().unique().tolist())
-        meses_label = {1:"Jan",2:"Fev",3:"Mar",4:"Abr",5:"Mai",6:"Jun",7:"Jul",8:"Ago",9:"Set",10:"Out",11:"Nov",12:"Dez"}
-        mes_sel = st.selectbox("Filtrar por mês (opcional)", ["Todos"] + [meses_label.get(m, str(m)) for m in meses_disp])
-        if mes_sel != "Todos":
-            inv = {v:k for k,v in meses_label.items()}
-            mes_num = inv.get(mes_sel, None)
-            base_filtro = base_ano[base_ano["MES"] == mes_num].copy()
-        else:
-            base_filtro = base_ano.copy()
-    with col_s:
-        sem_disp = sorted(base_filtro["SEMANA_ISO"].dropna().unique().tolist())
-        if not sem_disp:
-            st.info("Sem semanas para o filtro selecionado."); return
-        sem_sel = st.slider("Semana Epidemiológica", min_value=int(min(sem_disp)), max_value=int(max(sem_disp)), value=int(max(sem_disp)), step=1)
+        plot_mapa_pontos(df_ve, col_addr="ENDERECO_BR", titulo="VE — Últimos 60 dias")
 
-    subset_sem = base_filtro[base_filtro["SEMANA_ISO"] == sem_sel]
-    if subset_sem.empty:
-        st.info("Sem casos para a semana/mês selecionados.")
-    else:
-        plot_mapa_pontos(subset_sem, col_addr="ENDERECO_BR", titulo=f"Mapa de pontos — Semana {sem_sel} / {ano_ref}")
+    # =======================
+    # VA — últimos 15 dias
+    # =======================
+    if df_va is not None and not df_va.empty:
+        total_va = len(df_va)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("🦠 Vigilância Ambiental (VA) — Últimos 15 dias")
+            st.metric("Total de casos no período", f"{total_va}")
+        with col2:
+            st.caption("Amostra dos dados (últimos 15 dias)")
+            st.dataframe(formatar_datas_para_str_ddmmaaaa(df_va).head(200), use_container_width=True)
+
+        plot_mapa_pontos(df_va, col_addr="ENDERECO_BR", titulo="VA — Últimos 15 dias")
+
+    # =======================
+    # Casos sem encerramento (opcional)
+    # =======================
+    if df_sem_encerramento is not None and not df_sem_encerramento.empty:
+        total_sem = len(df_sem_encerramento)
+        st.subheader("🦠 Casos sem encerramento (visão atual)")
+        st.metric("Total de registros", f"{total_sem}")
+        st.dataframe(formatar_datas_para_str_ddmmaaaa(df_sem_encerramento), use_container_width=True)
+        # Se quiser mapa dos sem encerramento, descomente:
+        # plot_mapa_pontos(df_sem_encerramento, col_addr="ENDERECO_BR", titulo="Casos sem encerramento (todos)")
 
 # ==============================
 # Login / Logout
@@ -622,10 +611,16 @@ def processamento(user_email):
                 f.write(file.getbuffer())
         try:
             df_ve, df_va, df_sem_encerramento = processar_arquivos(str(TEMP_DIR))
+
+            # padronização e endereço
             df_ve = adicionar_endereco_br(remover_colunas_duplicadas(df_ve))
             df_va = adicionar_endereco_br(remover_colunas_duplicadas(df_va))
             df_sem_encerramento = adicionar_endereco_br(remover_colunas_duplicadas(df_sem_encerramento))
-            df_va = filtrar_por_ultimos_dias(df_va, "DT_NOTIFIC", 15)  # VA = 15 dias
+
+            # 👇 FILTROS DO PEDIDO
+            df_ve = filtrar_por_ultimos_dias(df_ve, "DT_SIN_PRI", 60)  # VE = 60 dias
+            df_va = filtrar_por_ultimos_dias(df_va, "DT_SIN_PRI", 15)  # VA = 15 dias
+
             if pode_editar(user_email):
                 df_ve.to_excel(DATA_DIR / "chico_filtrado_ve.xlsx", index=False, engine='openpyxl')
                 df_va.to_excel(DATA_DIR / "chico_filtrado_va.xlsx", index=False, engine='openpyxl')
@@ -633,74 +628,31 @@ def processamento(user_email):
                 st.success("Arquivos processados e salvos com sucesso!")
             else:
                 st.info("Arquivos processados apenas para visualização. Nenhum dado foi salvo.")
+
             exibir_dados(df_ve, df_va, df_sem_encerramento)
         except Exception as e:
             st.error(f"Erro ao processar os arquivos: {e}")
 
     elif pode_visualizar(user_email):
         try:
+            # leitura dos arquivos salvos (de acordo com permissões)
             df_ve = pd.read_excel(DATA_DIR / "chico_filtrado_ve.xlsx") if pode_editar(user_email) else None
             df_va = pd.read_excel(DATA_DIR / "chico_filtrado_va.xlsx") if user_email == EMAIL_VA else None
             df_sem_encerramento = pd.read_excel(DATA_DIR / "casos_sem_encerramento.xlsx")
-            if df_ve is not None: df_ve = adicionar_endereco_br(remover_colunas_duplicadas(df_ve))
+
+            if df_ve is not None:
+                df_ve = adicionar_endereco_br(remover_colunas_duplicadas(df_ve))
+                df_ve = filtrar_por_ultimos_dias(df_ve, "DT_SIN_PRI", 60)  # garante filtro na visualização
+
             if df_va is not None:
                 df_va = adicionar_endereco_br(remover_colunas_duplicadas(df_va))
-                df_va = filtrar_por_ultimos_dias(df_va, "DT_NOTIFIC", 15)
+                df_va = filtrar_por_ultimos_dias(df_va, "DT_SIN_PRI", 15)  # garante filtro na visualização
+
             df_sem_encerramento = adicionar_endereco_br(remover_colunas_duplicadas(df_sem_encerramento))
+
             exibir_dados(df_ve, df_va, df_sem_encerramento)
         except FileNotFoundError:
             st.warning("Nenhum dado salvo foi encontrado.")
-
-def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
-    with st.expander("🧭 Máscara/contorno do DS VII (opcional)"):
-        up = st.file_uploader("Envie o GeoJSON **ou KML** dos Distritos Sanitários do Recife",
-                              type=["geojson","json","kml"], key="up_ds7_geojson")
-        campo = st.text_input("Campo para filtrar o DS VII (ex.: DS, NUM_DS, NOME, name)", value="DS")
-        valor = st.text_input("Valor do DS VII nesse campo (ex.: VII, 7, Distrito Sanitário VII)", value="VII")
-        if up is not None:
-            try:
-                saved = salvar_ds7_upload_qualquer(up)
-                st.success(f"Arquivo salvo/convertido em: {saved}")
-            except Exception as e:
-                st.error(f"Não consegui preparar o arquivo: {e}")
-        st.session_state["ds7_campo"] = campo
-        st.session_state["ds7_valor"] = valor
-        if not DS7_GEOJSON_PATH.exists():
-            st.info("Dica: inclua `assets/ds7.geojson` no repositório ou use a URL RAW (já configurada).")
-        if not _HAS_SHAPELY:
-            st.caption("Sem shapely → contorno aparece, mas **sem** máscara cinza. (opcional)")
-
-    # Diagnóstico opcional
-    with st.expander("🔧 Diagnóstico do ambiente (opcional)", expanded=False):
-        import sys, pkgutil
-        st.write("Python:", sys.version)
-        st.write("Exe:", sys.executable)
-        for pkg in ["folium","streamlit_folium","geopy","shapely","fastkml","altair","requests"]:
-            st.write(f"{pkg}?", pkgutil.find_loader(pkg) is not None)
-
-    if df_ve is not None:
-        st.subheader("🦠 Casos dos Últimos 60 Dias (VE)")
-        st.dataframe(formatar_datas_para_str_ddmmaaaa(df_ve), use_container_width=True)
-        st.subheader("📈 Casos VE por Semana Epidemiológica (padrão do app)")
-        plotar_casos_por_semana(df_ve, coluna_data='DT_NOTIFIC')
-        bloco_ano_corrente(df_ve, "VE", data_col="DT_NOTIFIC")
-
-    if df_va is not None:
-        st.subheader("🦠 Casos dos Últimos 15 Dias (VA)")
-        st.dataframe(formatar_datas_para_str_ddmmaaaa(df_va), use_container_width=True)
-        st.subheader("📈 Casos VA por Semana Epidemiológica (padrão do app)")
-        plotar_casos_por_semana(df_va, coluna_data='DT_NOTIFIC')
-        bloco_ano_corrente(df_va, "VA", data_col="DT_NOTIFIC")
-
-    if df_sem_encerramento is not None:
-        st.subheader("🦠 Casos sem encerramento")
-        st.dataframe(formatar_datas_para_str_ddmmaaaa(df_sem_encerramento), use_container_width=True)
-        st.subheader("📊 Gráfico Geral - Casos por Semana Epidemiológica (padrão do app)")
-        if 'SEMANA_EPIDEMIOLOGICA' in df_sem_encerramento.columns:
-            plotar_casos_por_semana(df_sem_encerramento, coluna_semana='SEMANA_EPIDEMIOLOGICA')
-        else:
-            plotar_casos_por_semana(df_sem_encerramento, coluna_data='DT_NOTIFIC')
-        bloco_ano_corrente(df_sem_encerramento, "Casos sem encerramento", data_col="DT_NOTIFIC")
 
 # ==============================
 # Execução principal
