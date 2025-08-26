@@ -12,7 +12,7 @@ import pydeck as pdk
 from pathlib import Path
 
 from process_data import processar_arquivos
-# REMOVIDO: from utils import plotar_casos_por_semana
+# (Sem import de utils; histograma e demais gráficos estão implementados aqui)
 
 # ==============================
 # Firebase
@@ -78,7 +78,7 @@ ASSETS_DIR = BASE_DIR / "assets"
 DS7_SOURCE       = ASSETS_DIR / "ds7.geojson"        # versionado no repo (recomendado)
 DS7_GEOJSON_PATH = DATA_DIR   / "ds7.geojson"        # usado em runtime
 
-# >>>>>>> URL RAW CORRETA DO GITHUB (usa seu repositório público)
+# URL RAW do GeoJSON no GitHub
 DS7_REMOTE_URL = "https://raw.githubusercontent.com/raquelacioli/monitora-arbo/main/assets/ds7.geojson"
 
 # ==============================
@@ -141,6 +141,46 @@ def formatar_datas_para_str_ddmmaaaa(df: pd.DataFrame) -> pd.DataFrame:
             s = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
             df[col] = s.dt.strftime("%d/%m/%Y")
     return df
+
+# ==============================
+# Epidemiologia: histograma por Semana ISO
+# ==============================
+def _add_epi_cols_local(df: pd.DataFrame, data_col: str = "DT_SIN_PRI") -> pd.DataFrame:
+    """Adiciona ANO_ISO e SEMANA_ISO a partir de data_col."""
+    if df is None or data_col not in df.columns: return df
+    out = df.copy()
+    datas = pd.to_datetime(out[data_col], errors="coerce", dayfirst=True)
+    iso = datas.dt.isocalendar()
+    out["ANO_ISO"] = iso["year"].astype("Int64")
+    out["SEMANA_ISO"] = iso["week"].astype("Int64")
+    return out
+
+def plot_histograma_semana(df: pd.DataFrame, data_col: str = "DT_SIN_PRI", titulo: str = "Total de casos por Semana Epidemiológica (período mostrado)"):
+    """Gera um histograma (barras) com contagem por SEMANA_ISO, usando o dataframe já filtrado."""
+    if df is None or df.empty or data_col not in df.columns:
+        st.info("Sem dados suficientes para o histograma de semanas.")
+        return
+    base = _add_epi_cols_local(df, data_col)
+    tmp = base.dropna(subset=["SEMANA_ISO"])
+    if tmp.empty:
+        st.info("Sem semanas válidas para o histograma.")
+        return
+    agg = tmp.groupby("SEMANA_ISO", dropna=True).size().reset_index(name="casos").sort_values("SEMANA_ISO")
+    if _HAS_ALTAIR:
+        chart = (
+            alt.Chart(agg)  # type: ignore
+            .mark_bar()
+            .encode(
+                x=alt.X("SEMANA_ISO:O", title="Semana Epidemiológica (ISO)"),
+                y=alt.Y("casos:Q", title="Casos"),
+                tooltip=["SEMANA_ISO","casos"]
+            )
+            .properties(width="container", height=280, title=titulo)
+        )
+        st.altair_chart(chart, use_container_width=True)
+    else:
+        st.subheader(titulo)
+        st.bar_chart(agg.set_index("SEMANA_ISO")["casos"])
 
 # ==============================
 # Geocache + geocodificação
@@ -440,7 +480,7 @@ def plot_mapa_pontos(df_addr: pd.DataFrame, col_addr: str = "ENDERECO_BR", titul
     st.pydeck_chart(pdk.Deck(initial_view_state=view_state, layers=layers, map_style=None))
 
 # ==============================
-# NOVA VISUALIZAÇÃO (sem semana epidemiológica)
+# Visualização principal (empilhada: título → métrica → tabela → hist → mapa)
 # ==============================
 def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
     with st.expander("🧭 Máscara/contorno do DS VII (opcional)"):
@@ -461,7 +501,6 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
         if not _HAS_SHAPELY:
             st.caption("Sem shapely → contorno aparece, mas **sem** máscara cinza. (opcional)")
 
-    # Diagnóstico opcional
     with st.expander("🔧 Diagnóstico do ambiente (opcional)", expanded=False):
         import sys, pkgutil
         st.write("Python:", sys.version)
@@ -470,45 +509,52 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
             st.write(f"{pkg}?", pkgutil.find_loader(pkg) is not None)
 
     # =======================
-    # VE — últimos 60 dias
+    # VE — últimos 60 dias (empilhado)
     # =======================
     if df_ve is not None and not df_ve.empty:
-        total_ve = len(df_ve)
-       # col1, col2 = st.columns(2)
-        #with col1:
         st.subheader("🦠 Vigilância Epidemiológica (VE) — Últimos 60 dias")
-        st.metric("Total de casos no período", f"{total_ve}")
-        #with col2:
-        st.caption("Amostra dos dados (últimos 60 dias)")
-        st.dataframe(formatar_datas_para_str_ddmmaaaa(df_ve).head(200), use_container_width=True)
+        st.metric("Total de casos no período", f"{len(df_ve)}")
 
+        st.caption("Amostra dos dados (últimos 60 dias)")
+        st.dataframe(formatar_datas_para_str_ddmmaaaa(df_ve), use_container_width=True)
+
+        # Histograma por Semana Epidemiológica (no período mostrado)
+        plot_histograma_semana(
+            df_ve, data_col="DT_SIN_PRI",
+            titulo="VE — Total de casos por Semana Epidemiológica (período mostrado)"
+        )
+
+        # Mapa (pontos do período)
         plot_mapa_pontos(df_ve, col_addr="ENDERECO_BR", titulo="VE — Últimos 60 dias")
 
     # =======================
-    # VA — últimos 15 dias
+    # VA — últimos 15 dias (empilhado)
     # =======================
     if df_va is not None and not df_va.empty:
-        total_va = len(df_va)
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("🦠 Vigilância Ambiental (VA) — Últimos 15 dias")
-            st.metric("Total de casos no período", f"{total_va}")
-        with col2:
-            st.caption("Amostra dos dados (últimos 15 dias)")
-            st.dataframe(formatar_datas_para_str_ddmmaaaa(df_va).head(200), use_container_width=True)
+        st.subheader("🦠 Vigilância Ambiental (VA) — Últimos 15 dias")
+        st.metric("Total de casos no período", f"{len(df_va)}")
 
+        st.caption("Amostra dos dados (últimos 15 dias)")
+        st.dataframe(formatar_datas_para_str_ddmmaaaa(df_va), use_container_width=True)
+
+        plot_histograma_semana(
+            df_va, data_col="DT_SIN_PRI",
+            titulo="VA — Total de casos por Semana Epidemiológica (período mostrado)"
+        )
         plot_mapa_pontos(df_va, col_addr="ENDERECO_BR", titulo="VA — Últimos 15 dias")
 
     # =======================
     # Casos sem encerramento (opcional)
     # =======================
     if df_sem_encerramento is not None and not df_sem_encerramento.empty:
-        total_sem = len(df_sem_encerramento)
         st.subheader("🦠 Casos sem encerramento (visão atual)")
-        st.metric("Total de registros", f"{total_sem}")
+        st.metric("Total de registros", f"{len(df_sem_encerramento)}")
         st.dataframe(formatar_datas_para_str_ddmmaaaa(df_sem_encerramento), use_container_width=True)
-        # Se quiser mapa dos sem encerramento, descomente:
-        # plot_mapa_pontos(df_sem_encerramento, col_addr="ENDERECO_BR", titulo="Casos sem encerramento (todos)")
+        # Se quiser histograma/mapa aqui, descomente:
+        # plot_histograma_semana(df_sem_encerramento, data_col="DT_SIN_PRI",
+        #                        titulo="Casos sem encerramento — Total por Semana Epidemiológica")
+        # plot_mapa_pontos(df_sem_encerramento, col_addr="ENDERECO_BR",
+        #                  titulo="Casos sem encerramento (todos)")
 
 # ==============================
 # Login / Logout
@@ -530,17 +576,20 @@ def login():
         st.stop()
 
 def logout():
-    col1, col2 = st.columns([5,1])
-    with col1:
-        st.markdown(f"""
-            <div style="display: flex; align-items: center; gap: .5rem;">
-                <span style="font-size: 16px;">👤</span>
-                <span style="font-size: 16px;">{st.session_state.get("email","Usuário")}</span>
-            </div>
-        """, unsafe_allow_html=True)
-    with col2:
-        if st.button("🔒 Sair"):
-            st.session_state.clear(); st.rerun()
+    # Evita NameError com 'with col1:' — usa lista de colunas
+    cols = st.columns([5, 1])
+    cols[0].markdown(
+        f"""
+        <div style="display: flex; align-items: center; gap: .5rem;">
+            <span style="font-size: 16px;">👤</span>
+            <span style="font-size: 16px;">{st.session_state.get("email","Usuário")}</span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    if cols[1].button("🔒 Sair"):
+        st.session_state.clear()
+        st.rerun()
 
 # ==============================
 # Auxiliares de UI
@@ -617,7 +666,7 @@ def processamento(user_email):
             df_va = adicionar_endereco_br(remover_colunas_duplicadas(df_va))
             df_sem_encerramento = adicionar_endereco_br(remover_colunas_duplicadas(df_sem_encerramento))
 
-            # 👇 FILTROS DO PEDIDO
+            # FILTROS DO PEDIDO
             df_ve = filtrar_por_ultimos_dias(df_ve, "DT_SIN_PRI", 60)  # VE = 60 dias
             df_va = filtrar_por_ultimos_dias(df_va, "DT_SIN_PRI", 15)  # VA = 15 dias
 
