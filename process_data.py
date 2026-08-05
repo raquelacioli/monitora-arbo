@@ -1,60 +1,49 @@
-import pandas as pd
+# process_data.py
 import os
-from simpledbf import Dbf5
+import pandas as pd
 from datetime import datetime
 
 def processar_arquivos(pasta):
-    # 1. Localizar todos os arquivos .xls .ods na pasta 'arquivos/'
-    arquivos_planilhas = [os.path.join(pasta, f) for f in os.listdir(pasta) if f.endswith((".xls", ".ods", ".odf", ".dbf"))]
+    # 1. Localizar todos os arquivos compatíveis na pasta
+    arquivos_planilhas = [
+        os.path.join(pasta, f) for f in os.listdir(pasta) 
+        if f.lower().endswith((".xls", ".xlsx", ".ods", ".odf", ".dbf"))
+    ]
 
     if not arquivos_planilhas:
-        raise ValueError("Nenhum arquivo .xls, .ods ou .odf encontrado na pasta.")
+        raise ValueError("Nenhum arquivo .xls, .xlsx, .ods, .odf ou .dbf encontrado na pasta.")
 
-
-    # 2. Lista para armazenar DataFrames    
     dfs = []
+    erros_detalhados = []
 
-    # 3. Iterar sobre cada arquivo e aplicar o processamento inicial
+    # 2. Iterar sobre cada arquivo e aplicar a leitura
     for caminho in arquivos_planilhas:
-        print(f"Lendo: {caminho}")
+        nome_arq = os.path.basename(caminho)
+        print(f"Lendo: {nome_arq}")
         try:
             extensao = os.path.splitext(caminho)[1].lower()
 
             if extensao == '.xls':
-                df = pd.read_excel(caminho, engine='xlrd')
+                df = pd.read_excel(caminho)
             elif extensao in ['.ods', '.odf']:
+                # Tenta primeiro com odf, depois com leitor padrão
                 try:
-                    df = pd.read_excel(caminho, engine='calamine')
-                except Exception:
                     df = pd.read_excel(caminho, engine='odf')
+                except Exception:
+                    df = pd.read_excel(caminho)
+            elif extensao == '.xlsx':
+                df = pd.read_excel(caminho, engine='openpyxl')
             elif extensao == '.dbf':
                 from simpledbf import Dbf5
                 dbf = Dbf5(caminho, codec='latin1')
                 df = dbf.to_dataframe()
+            else:
+                continue
 
-                # --- INÍCIO DO CÓDIGO DE DEPURAÇÃO ---
-                print("--- COLUNAS ENCONTRADAS NO ARQUIVO .DBF ---")
-                print(df.columns.tolist())
-                print("-------------------------------------------")
-                # --- FIM DO CÓDIGO DE DEPURAÇÃO ---
-                # Converte o arquivo .dbf para um DataFrame do pandas
-                # O codec 'latin1' é comum em arquivos de sistemas legados do Brasil
-                # dbf = Dbf5(caminho, codec='latin1')
-                # df = dbf.to_dataframe()
-            # # 4. Imprimir os nomes das colunas para depuração
-            # print("Colunas no dataset:")
-            # print(df.columns.tolist())
+            # 3. Normalização de colunas (caixa alta e sem espaços externos)
+            df.columns = df.columns.astype(str).str.strip().str.upper().str.split(',').str[0]
 
-            df['NM_PACIENT'] = ''
-            df['NM_LOGRADO'] = ''
-            df['NU_NUMERO']  = ''
-            df['NM_COMPLEM'] = ''
-
-            # 5. Limpar os nomes das colunas: manter só o nome antes da vírgula
-            df.columns = df.columns.str.split(',').str[0]
-            print("Colunas encontradas:", df.columns.tolist())
-
-            # 6. Selecionar as colunas relevantes para análise
+            # Listagem de colunas desejadas do SINAN
             columns_to_select = [
                 'NU_NOTIFIC', 'DT_NOTIFIC', 'NU_ANO', 'SEM_NOT', 'ID_UNIDADE', 'DT_SIN_PRI', 'NM_PACIENT', 
                 'DT_NASC', 'NU_IDADE_N', 'CS_SEXO', 'CS_GESTANT', 'CS_RACA', 'CS_ESCOL_N', 
@@ -65,70 +54,79 @@ def processar_arquivos(pasta):
                 'DT_ENCERRA', 'DT_DIGITA', 'CS_FLXRET'
             ]
 
-            df = df[columns_to_select]
+            # Adiciona colunas ausentes como vazias para não quebrar a seleção
+            for col in columns_to_select:
+                if col not in df.columns:
+                    df[col] = ''
 
+            # Seleciona apenas as colunas desejadas mantendo a estrutura esperada
+            df = df[columns_to_select]
             dfs.append(df)
 
         except Exception as e:
-            print(f"Erro ao ler {caminho}: {e}")
+            msg_erro = f"Erro em [{nome_arq}]: {str(e)}"
+            print(msg_erro)
+            erros_detalhados.append(msg_erro)
             continue
 
     if not dfs:
-        raise ValueError("Nenhum arquivo pôde ser processado com sucesso.")
-    
-    # 7. Concatenar todos os DataFrames
+        detalhes = " | ".join(erros_detalhados)
+        raise ValueError(f"Nenhum arquivo pôde ser processado com sucesso. Detalhes: {detalhes}")
+
+    # 4. Concatenar todos os DataFrames
     df = pd.concat(dfs, ignore_index=True)
 
-    # 9. Mapear os códigos para valores legíveis
-    criterio_mapping = {
-        1: 'Laboratório', 2: 'Clínico Epidemiológico', 3: 'Em investigação', 0: 'Em branco'
-    }
-    raca_mapping = {
-        1: 'Branca', 2: 'Preta', 3: 'Amarela', 4: 'Parda', 5: 'Indígena', 9: 'Ignorado'
-    }
-    evolucao_mapping = {
-        1: 'Cura', 2: 'Óbito', 3: 'Óbito por outra causa', 4: 'Óbito em investigação', 9: 'Ignorado'
-    }
+    # 5. Mapear os códigos para valores legíveis
+    criterio_mapping = {1: 'Laboratório', 2: 'Clínico Epidemiológico', 3: 'Em investigação', 0: 'Em branco'}
+    raca_mapping = {1: 'Branca', 2: 'Preta', 3: 'Amarela', 4: 'Parda', 5: 'Indígena', 9: 'Ignorado'}
+    evolucao_mapping = {1: 'Cura', 2: 'Óbito', 3: 'Óbito por outra causa', 4: 'Óbito em investigação', 9: 'Ignorado'}
 
-    df['CRITERIO'] = df['CRITERIO'].map(criterio_mapping)
-    df['NU_IDADE_N'] = df['NU_IDADE_N'] - 4000
-    df['CS_RACA'] = df['CS_RACA'].map(raca_mapping)
-    df['EVOLUCAO'] = df['EVOLUCAO'].map(evolucao_mapping)
-    df['DT_DIGITA'] = pd.to_datetime(df['DT_DIGITA'], errors='coerce')
-    df['DT_NOTIFIC'] = pd.to_datetime(df['DT_NOTIFIC'], errors='coerce')
-    df['OPORTUNIDADE_SINAN'] = (df['DT_DIGITA'] - df['DT_NOTIFIC']).dt.days
+    if 'CRITERIO' in df.columns:
+        df['CRITERIO'] = df['CRITERIO'].map(criterio_mapping).fillna(df['CRITERIO'])
+    if 'CS_RACA' in df.columns:
+        df['CS_RACA'] = df['CS_RACA'].map(raca_mapping).fillna(df['CS_RACA'])
+    if 'EVOLUCAO' in df.columns:
+        df['EVOLUCAO'] = df['EVOLUCAO'].map(evolucao_mapping).fillna(df['EVOLUCAO'])
 
+    # Ajuste na idade SINAN
+    if 'NU_IDADE_N' in df.columns:
+        df['NU_IDADE_N'] = pd.to_numeric(df['NU_IDADE_N'], errors='coerce')
+        df.loc[df['NU_IDADE_N'] >= 4000, 'NU_IDADE_N'] = df['NU_IDADE_N'] - 4000
 
-    # 11. Calcular Semana Epidemiológica
-    df["SEMANA_EPIDEMIOLOGICA"] = df["SEM_NOT"].astype(str).str[-2:]
+    # Oportunidade SINAN
+    df['DT_DIGITA_CONV'] = pd.to_datetime(df['DT_DIGITA'], errors='coerce', dayfirst=True)
+    df['DT_NOTIFIC_CONV'] = pd.to_datetime(df['DT_NOTIFIC'], errors='coerce', dayfirst=True)
+    df['OPORTUNIDADE_SINAN'] = (df['DT_DIGITA_CONV'] - df['DT_NOTIFIC_CONV']).dt.days
 
-    # 12. Filtrar por bairros da DSVII
+    # Semana Epidemiológica
+    if 'SEM_NOT' in df.columns:
+        df["SEMANA_EPIDEMIOLOGICA"] = df["SEM_NOT"].astype(str).str[-2:]
+
+    # 6. Filtrar por bairros da DS VII (se houver a coluna NM_BAIRRO preenchida)
     bairros_dsvii = [
         "CORREGO DO JENIPAPO", "NOVA DESCOBERTA", "PASSARINHO", "MACAXEIRA", "VASCO DA GAMA",
         "GUABIRABA", "MORRO DA CONCEICAO", "BREJO DE BEBERIBE", "BREJO DA GUABIRABA", "MANGABEIRA", 
         "BOLA NA REDE", "ALTO JOSÉ DO PINHO", "ALTO JOSÉ BONIFÁCIO", "ALTO JOSE DO PINHO", "ALTO JOSE BONIFACIO"
     ]
 
-    df = df[df["NM_BAIRRO"].str.upper().isin(bairros_dsvii)]
+    if 'NM_BAIRRO' in df.columns:
+        df_filtrado_bairro = df[df["NM_BAIRRO"].astype(str).str.upper().isin(bairros_dsvii)].copy()
+        if not df_filtrado_bairro.empty:
+            df = df_filtrado_bairro
 
+    # 7. Filtros por data de sintomas (DT_SIN_PRI)
     data_atual = pd.to_datetime(datetime.today())
+    dt_sin_pri_conv = pd.to_datetime(df['DT_SIN_PRI'], errors='coerce', dayfirst=True)
 
-    df_ve = df[df['DT_SIN_PRI'] >= (data_atual - pd.Timedelta(days=60))].copy()
-    df_va = df[df['DT_SIN_PRI'] >= (data_atual - pd.Timedelta(days=15))].copy()
+    df_ve = df[dt_sin_pri_conv >= (data_atual - pd.Timedelta(days=60))].copy()
+    df_va = df[dt_sin_pri_conv >= (data_atual - pd.Timedelta(days=15))].copy()
 
-    # 10. Formatar colunas de data no formato dd/mm/yyyy
-    colunas_data = ['DT_NOTIFIC', 'DT_SIN_PRI', 'DT_NASC', 'DT_ENCERRA', 'DT_DIGITA']
-    for col in colunas_data:
-        df[col] = pd.to_datetime(df[col], errors='coerce')
-        if pd.api.types.is_datetime64_any_dtype(df[col]):
-            df[col] = df[col].dt.strftime('%d/%m/%Y')
+    # Casos sem encerramento
+    casos_sem_encerramento = df[df['DT_ENCERRA'].isna() | (df['DT_ENCERRA'].astype(str).str.strip() == "")].copy()
 
-    # Filtra os casos onde a coluna 'DT_ENCERRA' está vazia (nula)
-    casos_sem_encerramento = df[df['DT_ENCERRA'].isna()]
-
-
-    # 11. Salvar o resultado final 
-    # df_ve.to_excel('chico_filtrado_ve.xlsx', index=False, engine='openpyxl')
-    # df_va.to_excel('chico_filtrado_va.xlsx', index=False, engine='openpyxl')
+    # Limpeza de colunas auxiliares
+    df_ve.drop(columns=['DT_DIGITA_CONV', 'DT_NOTIFIC_CONV'], errors='ignore', inplace=True)
+    df_va.drop(columns=['DT_DIGITA_CONV', 'DT_NOTIFIC_CONV'], errors='ignore', inplace=True)
+    casos_sem_encerramento.drop(columns=['DT_DIGITA_CONV', 'DT_NOTIFIC_CONV'], errors='ignore', inplace=True)
 
     return df_ve, df_va, casos_sem_encerramento
