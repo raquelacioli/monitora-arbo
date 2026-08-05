@@ -33,37 +33,37 @@ EMAIL_ADMIN = "raquelmlacioli@gmail.com"
 firebase = pyrebase.initialize_app(FIREBASE_CONFIG)
 auth = firebase.auth()
 
-def pode_visualizar(email): return email in [EMAIL_VA, EMAIL_VE, EMAIL_ADMIN]
-def pode_editar(email): return email in [EMAIL_VE, EMAIL_ADMIN]
+def pode_visualizar(email): return email in [EMAIL_VA, EMAIL_VE]
+def pode_editar(email): return email == EMAIL_VE
 def email_valido(email): return re.match(r"[^@]+@[^@]+\.[^@]+", email)
 
 # ==============================
 # Imports opcionais (com flags)
 # ==============================
-_HAS_GEOPY = _HAS_FOLIUM = _HAS_SHAPELY = _HAS_FASTKML = _HAS_ALTAIR = False
+_HAS_GEOPY=_HAS_FOLIUM=_HAS_SHAPELY=_HAS_FASTKML=_HAS_ALTAIR=False
 try:
     from geopy.geocoders import Nominatim
     from geopy.extra.rate_limiter import RateLimiter
-    _HAS_GEOPY = True
+    _HAS_GEOPY=True
 except Exception: pass
 try:
     import folium
     from folium.plugins import MarkerCluster, FastMarkerCluster
     from streamlit_folium import st_folium
-    _HAS_FOLIUM = True
+    _HAS_FOLIUM=True
 except Exception: pass
 try:
     from shapely.geometry import shape, Polygon, mapping
     from shapely.ops import unary_union
-    _HAS_SHAPELY = True
+    _HAS_SHAPELY=True
 except Exception: pass
 try:
     from fastkml import kml as _fastkml  # type: ignore
-    _HAS_FASTKML = True
+    _HAS_FASTKML=True
 except Exception: pass
 try:
     import altair as alt  # type: ignore
-    _HAS_ALTAIR = True
+    _HAS_ALTAIR=True
 except Exception: pass
 
 # ==============================
@@ -74,11 +74,9 @@ DATA_DIR   = BASE_DIR / "dados_salvos"
 TEMP_DIR   = BASE_DIR / "temp_upload"
 ASSETS_DIR = BASE_DIR / "assets"
 
-DS7_SOURCE       = ASSETS_DIR / "ds7.geojson"        # versionado no repo (recomendado)
-DS7_GEOJSON_PATH = DATA_DIR   / "ds7.geojson"        # usado em runtime
-
-# URL RAW do GeoJSON no GitHub
-DS7_REMOTE_URL = "https://raw.githubusercontent.com/raquelacioli/monitora-arbo/main/assets/ds7.geojson"
+DS7_SOURCE       = ASSETS_DIR / "ds7.geojson"
+DS7_GEOJSON_PATH = DATA_DIR   / "ds7.geojson"
+DS7_REMOTE_URL   = "https://raw.githubusercontent.com/raquelacioli/monitora-arbo/main/assets/ds7.geojson"
 
 # ==============================
 # Utilidades de dados
@@ -145,7 +143,6 @@ def formatar_datas_para_str_ddmmaaaa(df: pd.DataFrame) -> pd.DataFrame:
 # Epidemiologia: histograma por Semana ISO
 # ==============================
 def _add_epi_cols_local(df: pd.DataFrame, data_col: str = "DT_SIN_PRI") -> pd.DataFrame:
-    """Adiciona ANO_ISO e SEMANA_ISO a partir de data_col."""
     if df is None or data_col not in df.columns: return df
     out = df.copy()
     datas = pd.to_datetime(out[data_col], errors="coerce", dayfirst=True)
@@ -154,8 +151,7 @@ def _add_epi_cols_local(df: pd.DataFrame, data_col: str = "DT_SIN_PRI") -> pd.Da
     out["SEMANA_ISO"] = iso["week"].astype("Int64")
     return out
 
-def plot_histograma_semana(df: pd.DataFrame, data_col: str = "DT_SIN_PRI", titulo: str = "Total de casos por Semana Epidemiológica (período mostrado)"):
-    """Gera um histograma (barras) com contagem por SEMANA_ISO, usando o dataframe já filtrado."""
+def plot_histograma_semana(df: pd.DataFrame, data_col: str = "DT_SIN_PRI", titulo: str = "Total de casos por Semana Epidemiológica"):
     if df is None or df.empty or data_col not in df.columns:
         st.info("Sem dados suficientes para o histograma de semanas.")
         return
@@ -167,7 +163,7 @@ def plot_histograma_semana(df: pd.DataFrame, data_col: str = "DT_SIN_PRI", titul
     agg = tmp.groupby("SEMANA_ISO", dropna=True).size().reset_index(name="casos").sort_values("SEMANA_ISO")
     if _HAS_ALTAIR:
         chart = (
-            alt.Chart(agg)  # type: ignore
+            alt.Chart(agg)
             .mark_bar()
             .encode(
                 x=alt.X("SEMANA_ISO:O", title="Semana Epidemiológica (ISO)"),
@@ -206,7 +202,7 @@ def _geocode_many(addresses, max_new: int = 100) -> pd.DataFrame:
     if not _HAS_GEOPY:
         return pd.DataFrame(columns=["ENDERECO_BR","lat","lon"])
     geolocator = Nominatim(user_agent="monitora-arbo/1.0 (contato: vigilanciaambientalds7@gmail.com)", timeout=10)
-    geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1)  # type: ignore
+    geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1)
     rows = []
     for i, addr in enumerate(addresses):
         if i >= max_new: break
@@ -237,10 +233,9 @@ def _ensure_latlon_rows(df_addr: pd.DataFrame, col_addr: str = "ENDERECO_BR") ->
     return merged.dropna(subset=["lat","lon"]).reset_index(drop=True)
 
 # ==============================
-# Contorno do DS VII (assets / URL / upload KML-GeoJSON)
+# Contorno do DS VII
 # ==============================
 def drive_share_to_direct(url: str) -> str:
-    """Converte link de compartilhamento do Drive em link direto."""
     if not url: return url
     m = re.search(r"/d/([A-Za-z0-9_-]{20,})", url)
     if m: return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
@@ -249,7 +244,7 @@ def drive_share_to_direct(url: str) -> str:
     return url
 
 def _fetch_bytes_from_url(url: str, timeout: int = 20) -> bytes:
-    import requests  # requer 'requests' no requirements.txt
+    import requests
     r = requests.get(url, timeout=timeout)
     r.raise_for_status()
     return r.content
@@ -275,7 +270,6 @@ def kml_to_geojson_bytes_fastkml(kml_bytes: bytes) -> bytes:
     return json.dumps({"type":"FeatureCollection","features":feats}, ensure_ascii=False).encode("utf-8")
 
 def kml_to_geojson_bytes_stdlib(kml_bytes: bytes) -> bytes:
-    """Fallback sem libs externas: extrai polígonos do KML."""
     import xml.etree.ElementTree as ET, re as _re, json as _json
     root = ET.fromstring(kml_bytes)
     m = _re.match(r"\{(.+)\}", root.tag)
@@ -308,11 +302,6 @@ def kml_to_geojson_bytes_stdlib(kml_bytes: bytes) -> bytes:
     return _json.dumps({"type":"FeatureCollection","features":feats}, ensure_ascii=False).encode("utf-8")
 
 def bootstrap_ds7_geojson():
-    """
-    Garante o contorno do DS7 em dados_salvos/ds7.geojson.
-    Ordem: assets/ → URL remota (GitHub/Drive). Aceita GeoJSON ou KML (converte).
-    Também escreve um status em st.session_state['ds7_status'].
-    """
     DS7_GEOJSON_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     if DS7_GEOJSON_PATH.exists():
@@ -326,10 +315,8 @@ def bootstrap_ds7_geojson():
 
     if DS7_REMOTE_URL:
         try:
-            url = drive_share_to_direct(DS7_REMOTE_URL)  # funciona p/ GitHub e Drive
+            url = drive_share_to_direct(DS7_REMOTE_URL)
             raw = _fetch_bytes_from_url(url)
-
-            # tenta GeoJSON direto
             try:
                 json.loads(raw.decode("utf-8"))
                 DS7_GEOJSON_PATH.write_bytes(raw)
@@ -338,7 +325,6 @@ def bootstrap_ds7_geojson():
             except Exception:
                 pass
 
-            # tenta KML (fallback stdlib)
             try:
                 gj = kml_to_geojson_bytes_stdlib(raw)
                 DS7_GEOJSON_PATH.write_bytes(gj)
@@ -359,7 +345,6 @@ def bootstrap_ds7_geojson():
     st.session_state['ds7_status'] = "FALTA: sem assets/ds7.geojson e sem DS7_REMOTE_URL"
 
 def salvar_ds7_upload_qualquer(file):
-    """Aceita GeoJSON/JSON/KML. Se KML: converte para GeoJSON."""
     if file is None: return None
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     name = file.name.lower()
@@ -396,21 +381,19 @@ def carregar_geojson_filtrado(path: Path, campo=None, valor=None):
 def folium_add_ds7(m, geojson_path: Path = DS7_GEOJSON_PATH, campo=None, valor="VII", mascara=True):
     if not geojson_path.exists() or not _HAS_FOLIUM: return
     gj = carregar_geojson_filtrado(geojson_path, campo, valor)
-    # máscara (se shapely disponível)
     if mascara and _HAS_SHAPELY:
         geoms = [shape(ft["geometry"]) for ft in gj.get("features", [])]
         if geoms:
             ds = unary_union(geoms).buffer(0)
             world = Polygon([(-180,-90),(-180,90),(180,90),(180,-90)])
             mask = world.difference(ds)
-            folium.GeoJson(  # type: ignore
+            folium.GeoJson(
                 mapping(mask),
                 name="Máscara DS7",
                 style_function=lambda x: {"fillColor":"#000000","color":"#000000","fillOpacity":0.5,"weight":0},
                 control=False
             ).add_to(m)
-    # contorno/preenchimento leve
-    folium.GeoJson(  # type: ignore
+    folium.GeoJson(
         gj, name="DS7 - contorno",
         style_function=lambda x: {"color":"#d00000","weight":2,"fillColor":"#d00000","fillOpacity":0.05}
     ).add_to(m)
@@ -441,29 +424,27 @@ def plot_mapa_pontos(df_addr: pd.DataFrame, col_addr: str = "ENDERECO_BR", titul
         return
     c_lat = float(pontos["lat"].mean()); c_lon = float(pontos["lon"].mean()); n = len(pontos)
 
-    # Folium (preferencial)
     if _HAS_FOLIUM:
         try:
-            m = folium.Map(location=[c_lat,c_lon], zoom_start=12, tiles="cartodbpositron")  # type: ignore
+            m = folium.Map(location=[c_lat,c_lon], zoom_start=12, tiles="cartodbpositron")
             if DS7_GEOJSON_PATH.exists():
                 folium_add_ds7(m, DS7_GEOJSON_PATH, st.session_state.get("ds7_campo"), st.session_state.get("ds7_valor"), mascara=True)
             if n > 1500:
-                FastMarkerCluster(pontos[["lat","lon"]].values.tolist()).add_to(m)  # type: ignore
+                FastMarkerCluster(pontos[["lat","lon"]].values.tolist()).add_to(m)
             elif n > 300:
-                mc = MarkerCluster().add_to(m)  # type: ignore
+                mc = MarkerCluster().add_to(m)
                 for _, r in pontos.iterrows():
-                    folium.CircleMarker(location=[r["lat"],r["lon"]], radius=4, weight=1, color="#d00000", fill=True, fill_opacity=0.6).add_to(mc)  # type: ignore
+                    folium.CircleMarker(location=[r["lat"],r["lon"]], radius=4, weight=1, color="#d00000", fill=True, fill_opacity=0.6).add_to(mc)
             else:
                 for _, r in pontos.iterrows():
                     folium.CircleMarker(location=[r["lat"],r["lon"]], radius=5, weight=1, color="#d00000", fill=True, fill_opacity=0.7,
-                                        popup=folium.Popup(r.get("ENDERECO_BR",""), max_width=300)).add_to(m)  # type: ignore
+                                        popup=folium.Popup(r.get("ENDERECO_BR",""), max_width=300)).add_to(m)
             st.subheader(f"🗺️ {titulo} (total: {n})")
-            st_folium(m, width=900, height=560)  # type: ignore
+            st_folium(m, width=900, height=560)
             return
         except Exception as e:
             st.warning(f"Folium indisponível, usando PyDeck. Detalhe: {e}")
 
-    # PyDeck (fallback)
     st.subheader(f"🗺️ {titulo} (total: {n})")
     pts = pontos.rename(columns={"lon":"longitude","lat":"latitude"})
     layers = [pdk.Layer("ScatterplotLayer", data=pts, get_position='[longitude, latitude]',
@@ -508,11 +489,7 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
         st.metric("Total de casos no período", f"{len(df_ve)}")
         st.caption("Amostra dos dados (últimos 60 dias)")
         st.dataframe(formatar_datas_para_str_ddmmaaaa(df_ve), use_container_width=True)
-
-        plot_histograma_semana(
-            df_ve, data_col="DT_SIN_PRI",
-            titulo="VE — Total de casos por Semana Epidemiológica (período mostrado)"
-        )
+        plot_histograma_semana(df_ve, data_col="DT_SIN_PRI", titulo="VE — Total de casos por Semana Epidemiológica (período mostrado)")
         plot_mapa_pontos(df_ve, col_addr="ENDERECO_BR", titulo="VE — Últimos 60 dias")
 
     # =======================
@@ -523,11 +500,7 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
         st.metric("Total de casos no período", f"{len(df_va)}")
         st.caption("Amostra dos dados (últimos 15 dias)")
         st.dataframe(formatar_datas_para_str_ddmmaaaa(df_va), use_container_width=True)
-
-        plot_histograma_semana(
-            df_va, data_col="DT_SIN_PRI",
-            titulo="VA — Total de casos por Semana Epidemiológica (período mostrado)"
-        )
+        plot_histograma_semana(df_va, data_col="DT_SIN_PRI", titulo="VA — Total de casos por Semana Epidemiológica (período mostrado)")
         plot_mapa_pontos(df_va, col_addr="ENDERECO_BR", titulo="VA — Últimos 15 dias")
 
     # =======================
@@ -535,17 +508,8 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
     # =======================
     if df_sem_encerramento is not None and not df_sem_encerramento.empty:
         st.subheader("🦠 Casos sem encerramento (visão atual)")
-        st.metric("Total de registros sem encerramento", f"{len(df_sem_encerramento)}")
+        st.metric("Total de registros", f"{len(df_sem_encerramento)}")
         st.dataframe(formatar_datas_para_str_ddmmaaaa(df_sem_encerramento), use_container_width=True)
-
-        plot_histograma_semana(
-            df_sem_encerramento, data_col="DT_SIN_PRI",
-            titulo="Casos sem Encerramento — Total por Semana Epidemiológica"
-        )
-        plot_mapa_pontos(
-            df_sem_encerramento, col_addr="ENDERECO_BR",
-            titulo="Casos sem Encerramento (Mapa)"
-        )
 
 # ==============================
 # Login / Logout
@@ -562,9 +526,6 @@ def login():
         except Exception:
             st.error("Email ou senha inválidos.")
             st.session_state["login_success"] = False
-    elif st.session_state.get("login_success"):
-        st.success(f"Bem-vindo, {st.session_state['email']}!")
-        st.stop()
 
 def logout():
     cols = st.columns([5, 1])
@@ -620,7 +581,7 @@ def admin_panel(user_email):
 # Processamento / Exibição
 # ==============================
 def processamento(user_email):
-    bootstrap_ds7_geojson()  # prepara contorno (assets/ ou URL)
+    bootstrap_ds7_geojson()
 
     status = st.session_state.get('ds7_status')
     if status:
@@ -637,8 +598,8 @@ def processamento(user_email):
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
     uploaded_files = None
-    if user_email != EMAIL_VA:
-        uploaded_files = st.file_uploader("📂 Envie arquivos .xls, .ods, .odf ou .dbf",
+    if not user_email == EMAIL_VA:
+        uploaded_files = st.file_uploader("Envie arquivos .xls, .ods, .odf ou .dbf",
                                           type=["xls","ods","odf","dbf"], accept_multiple_files=True)
     else:
         st.info("Você tem acesso apenas para visualização dos dados.")
@@ -654,44 +615,40 @@ def processamento(user_email):
             df_va = adicionar_endereco_br(remover_colunas_duplicadas(df_va))
             df_sem_encerramento = adicionar_endereco_br(remover_colunas_duplicadas(df_sem_encerramento))
 
-            df_ve = filtrar_por_ultimos_dias(df_ve, "DT_SIN_PRI", 60)  # VE = 60 dias
-            df_va = filtrar_por_ultimos_dias(df_va, "DT_SIN_PRI", 15)  # VA = 15 dias
+            df_ve = filtrar_por_ultimos_dias(df_ve, "DT_SIN_PRI", 60)
+            df_va = filtrar_por_ultimos_dias(df_va, "DT_SIN_PRI", 15)
 
             if pode_editar(user_email):
                 df_ve.to_excel(DATA_DIR / "chico_filtrado_ve.xlsx", index=False, engine='openpyxl')
                 df_va.to_excel(DATA_DIR / "chico_filtrado_va.xlsx", index=False, engine='openpyxl')
                 df_sem_encerramento.to_excel(DATA_DIR / "casos_sem_encerramento.xlsx", index=False, engine='openpyxl')
                 st.success("Arquivos processados e salvos com sucesso!")
+            else:
+                st.info("Arquivos processados apenas para visualização. Nenhum dado foi salvo.")
 
             exibir_dados(df_ve, df_va, df_sem_encerramento)
         except Exception as e:
             st.error(f"Erro ao processar os arquivos: {e}")
 
     elif pode_visualizar(user_email):
-        df_ve = df_va = df_sem_encerramento = None
-        
-        path_ve = DATA_DIR / "chico_filtrado_ve.xlsx"
-        path_va = DATA_DIR / "chico_filtrado_va.xlsx"
-        path_sem = DATA_DIR / "casos_sem_encerramento.xlsx"
+        try:
+            df_ve = pd.read_excel(DATA_DIR / "chico_filtrado_ve.xlsx") if pode_editar(user_email) else None
+            df_va = pd.read_excel(DATA_DIR / "chico_filtrado_va.xlsx") if user_email == EMAIL_VA else None
+            df_sem_encerramento = pd.read_excel(DATA_DIR / "casos_sem_encerramento.xlsx")
 
-        if path_ve.exists() and user_email != EMAIL_VA:
-            df_ve = pd.read_excel(path_ve)
-            df_ve = adicionar_endereco_br(remover_colunas_duplicadas(df_ve))
-            df_ve = filtrar_por_ultimos_dias(df_ve, "DT_SIN_PRI", 60)
+            if df_ve is not None:
+                df_ve = adicionar_endereco_br(remover_colunas_duplicadas(df_ve))
+                df_ve = filtrar_por_ultimos_dias(df_ve, "DT_SIN_PRI", 60)
 
-        if path_va.exists() and user_email in [EMAIL_VA, EMAIL_ADMIN]:
-            df_va = pd.read_excel(path_va)
-            df_va = adicionar_endereco_br(remover_colunas_duplicadas(df_va))
-            df_va = filtrar_por_ultimos_dias(df_va, "DT_SIN_PRI", 15)
+            if df_va is not None:
+                df_va = adicionar_endereco_br(remover_colunas_duplicadas(df_va))
+                df_va = filtrar_por_ultimos_dias(df_va, "DT_SIN_PRI", 15)
 
-        if path_sem.exists():
-            df_sem_encerramento = pd.read_excel(path_sem)
             df_sem_encerramento = adicionar_endereco_br(remover_colunas_duplicadas(df_sem_encerramento))
 
-        if any(df is not None for df in [df_ve, df_va, df_sem_encerramento]):
             exibir_dados(df_ve, df_va, df_sem_encerramento)
-        else:
-            st.warning("Nenhum dado salvo foi encontrado. Faça o envio de novos arquivos.")
+        except FileNotFoundError:
+            st.warning("Nenhum dado salvo foi encontrado.")
 
 # ==============================
 # Execução principal
