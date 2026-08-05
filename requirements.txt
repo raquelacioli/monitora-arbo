@@ -1,4 +1,5 @@
-streamlit>=1.35.0
+streamlit==1.36.0
+starlette==0.37.2
 pandas>=2.0.0
 numpy
 pyrebase4
@@ -14,5 +15,3 @@ requests
 folium
 streamlit-folium
 geopandas
-folium
-streamlit-folium
