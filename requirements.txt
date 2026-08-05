@@ -8,3 +8,4 @@ requests
 folium
 streamlit-folium
 geopandas
+pyrebase4
