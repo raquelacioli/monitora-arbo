@@ -506,7 +506,8 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
         st.write("Python:", sys.version)
         st.write("Exe:", sys.executable)
         for pkg in ["folium","streamlit_folium","geopy","shapely","fastkml","altair","requests"]:
-            st.write(f"{pkg}?", pkgutil.find_loader(pkg) is not None)
+        import importlib.util
+        st.write(f"{pkg}?", importlib.util.find_spec(pkg) is not None)
 
     # =======================
     # VE — últimos 60 dias (empilhado)
