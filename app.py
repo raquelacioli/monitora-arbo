@@ -13,8 +13,6 @@ import pydeck as pdk
 from pathlib import Path
 from process_data import processar_arquivos
 
-# (Sem import de utils; histograma e demais gráficos estão implementados aqui)
-
 # ==============================
 # Firebase
 # ==============================
@@ -35,8 +33,8 @@ EMAIL_ADMIN = "raquelmlacioli@gmail.com"
 firebase = pyrebase.initialize_app(FIREBASE_CONFIG)
 auth = firebase.auth()
 
-def pode_visualizar(email): return email in [EMAIL_VA, EMAIL_VE]
-def pode_editar(email): return email == EMAIL_VE
+def pode_visualizar(email): return email in [EMAIL_VA, EMAIL_VE, EMAIL_ADMIN]
+def pode_editar(email): return email in [EMAIL_VE, EMAIL_ADMIN]
 def email_valido(email): return re.match(r"[^@]+@[^@]+\.[^@]+", email)
 
 # ==============================
@@ -481,7 +479,7 @@ def plot_mapa_pontos(df_addr: pd.DataFrame, col_addr: str = "ENDERECO_BR", titul
     st.pydeck_chart(pdk.Deck(initial_view_state=view_state, layers=layers, map_style=None))
 
 # ==============================
-# Visualização principal (empilhada: título → métrica → tabela → hist → mapa)
+# Visualização principal
 # ==============================
 def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
     with st.expander("🧭 Máscara/contorno do DS VII (opcional)"):
@@ -503,31 +501,26 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
             st.caption("Sem shapely → contorno aparece, mas **sem** máscara cinza. (opcional)")
 
     # =======================
-    # VE - últimos 60 dias (empilhado)
+    # VE - últimos 60 dias
     # =======================
     if df_ve is not None and not df_ve.empty:
         st.subheader("🦠 Vigilância Epidemiológica (VE) — Últimos 60 dias")
         st.metric("Total de casos no período", f"{len(df_ve)}")
-
         st.caption("Amostra dos dados (últimos 60 dias)")
         st.dataframe(formatar_datas_para_str_ddmmaaaa(df_ve), use_container_width=True)
 
-        # Histograma por Semana Epidemiológica (no período mostrado)
         plot_histograma_semana(
             df_ve, data_col="DT_SIN_PRI",
             titulo="VE — Total de casos por Semana Epidemiológica (período mostrado)"
         )
-
-        # Mapa (pontos do período)
         plot_mapa_pontos(df_ve, col_addr="ENDERECO_BR", titulo="VE — Últimos 60 dias")
 
     # =======================
-    # VA — últimos 15 dias (empilhado)
+    # VA — últimos 15 dias
     # =======================
     if df_va is not None and not df_va.empty:
         st.subheader("🦠 Vigilância Ambiental (VA) — Últimos 15 dias")
         st.metric("Total de casos no período", f"{len(df_va)}")
-
         st.caption("Amostra dos dados (últimos 15 dias)")
         st.dataframe(formatar_datas_para_str_ddmmaaaa(df_va), use_container_width=True)
 
@@ -538,12 +531,21 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
         plot_mapa_pontos(df_va, col_addr="ENDERECO_BR", titulo="VA — Últimos 15 dias")
 
     # =======================
-    # Casos sem encerramento (opcional)
+    # Casos sem encerramento
     # =======================
     if df_sem_encerramento is not None and not df_sem_encerramento.empty:
         st.subheader("🦠 Casos sem encerramento (visão atual)")
-        st.metric("Total de registros", f"{len(df_sem_encerramento)}")
+        st.metric("Total de registros sem encerramento", f"{len(df_sem_encerramento)}")
         st.dataframe(formatar_datas_para_str_ddmmaaaa(df_sem_encerramento), use_container_width=True)
+
+        plot_histograma_semana(
+            df_sem_encerramento, data_col="DT_SIN_PRI",
+            titulo="Casos sem Encerramento — Total por Semana Epidemiológica"
+        )
+        plot_mapa_pontos(
+            df_sem_encerramento, col_addr="ENDERECO_BR",
+            titulo="Casos sem Encerramento (Mapa)"
+        )
 
 # ==============================
 # Login / Logout
@@ -565,7 +567,6 @@ def login():
         st.stop()
 
 def logout():
-    # Evita NameError com 'with col1:' — usa lista de colunas
     cols = st.columns([5, 1])
     cols[0].markdown(
         f"""
@@ -621,7 +622,6 @@ def admin_panel(user_email):
 def processamento(user_email):
     bootstrap_ds7_geojson()  # prepara contorno (assets/ ou URL)
 
-    # Mostra status do contorno no topo
     status = st.session_state.get('ds7_status')
     if status:
         (st.success if status.startswith("OK")
@@ -637,7 +637,7 @@ def processamento(user_email):
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
     uploaded_files = None
-    if not user_email == EMAIL_VA:
+    if user_email != EMAIL_VA:
         uploaded_files = st.file_uploader("📂 Envie arquivos .xls, .ods, .odf ou .dbf",
                                           type=["xls","ods","odf","dbf"], accept_multiple_files=True)
     else:
@@ -650,12 +650,10 @@ def processamento(user_email):
         try:
             df_ve, df_va, df_sem_encerramento = processar_arquivos(str(TEMP_DIR))
 
-            # padronização e endereço
             df_ve = adicionar_endereco_br(remover_colunas_duplicadas(df_ve))
             df_va = adicionar_endereco_br(remover_colunas_duplicadas(df_va))
             df_sem_encerramento = adicionar_endereco_br(remover_colunas_duplicadas(df_sem_encerramento))
 
-            # FILTROS DO PEDIDO
             df_ve = filtrar_por_ultimos_dias(df_ve, "DT_SIN_PRI", 60)  # VE = 60 dias
             df_va = filtrar_por_ultimos_dias(df_va, "DT_SIN_PRI", 15)  # VA = 15 dias
 
@@ -664,33 +662,36 @@ def processamento(user_email):
                 df_va.to_excel(DATA_DIR / "chico_filtrado_va.xlsx", index=False, engine='openpyxl')
                 df_sem_encerramento.to_excel(DATA_DIR / "casos_sem_encerramento.xlsx", index=False, engine='openpyxl')
                 st.success("Arquivos processados e salvos com sucesso!")
-            else:
-                st.info("Arquivos processados apenas para visualização. Nenhum dado foi salvo.")
 
             exibir_dados(df_ve, df_va, df_sem_encerramento)
         except Exception as e:
             st.error(f"Erro ao processar os arquivos: {e}")
 
     elif pode_visualizar(user_email):
-        try:
-            # leitura dos arquivos salvos (de acordo com permissões)
-            df_ve = pd.read_excel(DATA_DIR / "chico_filtrado_ve.xlsx") if pode_editar(user_email) else None
-            df_va = pd.read_excel(DATA_DIR / "chico_filtrado_va.xlsx") if user_email == EMAIL_VA else None
-            df_sem_encerramento = pd.read_excel(DATA_DIR / "casos_sem_encerramento.xlsx")
+        df_ve = df_va = df_sem_encerramento = None
+        
+        path_ve = DATA_DIR / "chico_filtrado_ve.xlsx"
+        path_va = DATA_DIR / "chico_filtrado_va.xlsx"
+        path_sem = DATA_DIR / "casos_sem_encerramento.xlsx"
 
-            if df_ve is not None:
-                df_ve = adicionar_endereco_br(remover_colunas_duplicadas(df_ve))
-                df_ve = filtrar_por_ultimos_dias(df_ve, "DT_SIN_PRI", 60)  # garante filtro na visualização
+        if path_ve.exists() and user_email != EMAIL_VA:
+            df_ve = pd.read_excel(path_ve)
+            df_ve = adicionar_endereco_br(remover_colunas_duplicadas(df_ve))
+            df_ve = filtrar_por_ultimos_dias(df_ve, "DT_SIN_PRI", 60)
 
-            if df_va is not None:
-                df_va = adicionar_endereco_br(remover_colunas_duplicadas(df_va))
-                df_va = filtrar_por_ultimos_dias(df_va, "DT_SIN_PRI", 15)  # garante filtro na visualização
+        if path_va.exists() and user_email in [EMAIL_VA, EMAIL_ADMIN]:
+            df_va = pd.read_excel(path_va)
+            df_va = adicionar_endereco_br(remover_colunas_duplicadas(df_va))
+            df_va = filtrar_por_ultimos_dias(df_va, "DT_SIN_PRI", 15)
 
+        if path_sem.exists():
+            df_sem_encerramento = pd.read_excel(path_sem)
             df_sem_encerramento = adicionar_endereco_br(remover_colunas_duplicadas(df_sem_encerramento))
 
+        if any(df is not None for df in [df_ve, df_va, df_sem_encerramento]):
             exibir_dados(df_ve, df_va, df_sem_encerramento)
-        except FileNotFoundError:
-            st.warning("Nenhum dado salvo foi encontrado.")
+        else:
+            st.warning("Nenhum dado salvo foi encontrado. Faça o envio de novos arquivos.")
 
 # ==============================
 # Execução principal
