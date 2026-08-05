@@ -503,13 +503,17 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
         if not _HAS_SHAPELY:
             st.caption("Sem shapely → contorno aparece, mas **sem** máscara cinza. (opcional)")
 
-   if not HAS_SHAPELY:
+        if not DS7_GEOJSON_PATH.exists():
+            st.info("Dica: inclua `assets/ds7.geojson` no repositório ou use a URL RAW (já configurada).")
+        if not HAS_SHAPELY:
             st.caption("Sem shapely -> contorno aparece, mas **sem** máscara cinza. (opcional)")
 
     # =======================
     # VE - últimos 60 dias (empilhado)
     # =======================
-    import sys
+    if df_ve is not None and not df_ve.empty:
+
+       import sys
     st.write("Python:", sys.version)
     st.write("Exe:", sys.executable)
     # VE — últimos 60 dias (empilhado)
