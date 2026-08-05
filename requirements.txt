@@ -12,3 +12,8 @@ pyrebase4
 simpledbf
 odfpy
 openpyxl
+pydeck
+shapely
+geopy
+openpyxl
+requests
