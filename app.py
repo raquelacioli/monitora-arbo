@@ -1,5 +1,6 @@
 # app.py
 # pyright: reportMissingImports=false
+import importlib.util
 import streamlit as st
 import importlib.util
 import pandas as pd
@@ -503,14 +504,8 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
             st.caption("Sem shapely → contorno aparece, mas **sem** máscara cinza. (opcional)")
 
     with st.expander("🔧 Diagnóstico do ambiente (opcional)", expanded=False):
-        import sys, pkgutil
-        st.write("Python:", sys.version)
+    st.write("Python:", sys.version)
         st.write("Exe:", sys.executable)
-        st.write(f"{pkg}?", importlib.util.find_spec(pkg) is not None)
-        import importlib.util
-        st.write(f"{pkg}?", importlib.util.find_spec(pkg) is not None)
-
-    # =======================
     # VE — últimos 60 dias (empilhado)
     # =======================
     if df_ve is not None and not df_ve.empty:
