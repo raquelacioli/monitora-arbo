@@ -1,8 +1,6 @@
-streamlit==1.36.0
-starlette==0.37.2
-pandas>=2.0.0
+streamlit
+pandas
 numpy
-pyrebase4
 google-cloud-storage
 setuptools
 xlrd
