@@ -2,7 +2,6 @@
 # pyright: reportMissingImports=false
 import importlib.util
 import streamlit as st
-import importlib.util
 import pandas as pd
 import pyrebase
 import os
@@ -12,8 +11,8 @@ import time
 import json
 import pydeck as pdk
 from pathlib import Path
-
 from process_data import processar_arquivos
+
 # (Sem import de utils; histograma e demais gráficos estão implementados aqui)
 
 # ==============================
@@ -43,30 +42,30 @@ def email_valido(email): return re.match(r"[^@]+@[^@]+\.[^@]+", email)
 # ==============================
 # Imports opcionais (com flags)
 # ==============================
-_HAS_GEOPY=_HAS_FOLIUM=_HAS_SHAPELY=_HAS_FASTKML=_HAS_ALTAIR=False
+_HAS_GEOPY = _HAS_FOLIUM = _HAS_SHAPELY = _HAS_FASTKML = _HAS_ALTAIR = False
 try:
     from geopy.geocoders import Nominatim
     from geopy.extra.rate_limiter import RateLimiter
-    _HAS_GEOPY=True
+    _HAS_GEOPY = True
 except Exception: pass
 try:
     import folium
     from folium.plugins import MarkerCluster, FastMarkerCluster
     from streamlit_folium import st_folium
-    _HAS_FOLIUM=True
+    _HAS_FOLIUM = True
 except Exception: pass
 try:
     from shapely.geometry import shape, Polygon, mapping
     from shapely.ops import unary_union
-    _HAS_SHAPELY=True
+    _HAS_SHAPELY = True
 except Exception: pass
 try:
     from fastkml import kml as _fastkml  # type: ignore
-    _HAS_FASTKML=True
+    _HAS_FASTKML = True
 except Exception: pass
 try:
     import altair as alt  # type: ignore
-    _HAS_ALTAIR=True
+    _HAS_ALTAIR = True
 except Exception: pass
 
 # ==============================
@@ -503,20 +502,8 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
         if not _HAS_SHAPELY:
             st.caption("Sem shapely → contorno aparece, mas **sem** máscara cinza. (opcional)")
 
-        if not DS7_GEOJSON_PATH.exists():
-            st.info("Dica: inclua `assets/ds7.geojson` no repositório ou use a URL RAW (já configurada).")
-        if not HAS_SHAPELY:
-            st.caption("Sem shapely -> contorno aparece, mas **sem** máscara cinza. (opcional)")
-
     # =======================
     # VE - últimos 60 dias (empilhado)
-    # =======================
-    if df_ve is not None and not df_ve.empty:
-
-       import sys
-    st.write("Python:", sys.version)
-    st.write("Exe:", sys.executable)
-    # VE — últimos 60 dias (empilhado)
     # =======================
     if df_ve is not None and not df_ve.empty:
         st.subheader("🦠 Vigilância Epidemiológica (VE) — Últimos 60 dias")
@@ -557,11 +544,6 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
         st.subheader("🦠 Casos sem encerramento (visão atual)")
         st.metric("Total de registros", f"{len(df_sem_encerramento)}")
         st.dataframe(formatar_datas_para_str_ddmmaaaa(df_sem_encerramento), use_container_width=True)
-        # Se quiser histograma/mapa aqui, descomente:
-        # plot_histograma_semana(df_sem_encerramento, data_col="DT_SIN_PRI",
-        #                        titulo="Casos sem encerramento — Total por Semana Epidemiológica")
-        # plot_mapa_pontos(df_sem_encerramento, col_addr="ENDERECO_BR",
-        #                  titulo="Casos sem encerramento (todos)")
 
 # ==============================
 # Login / Logout
