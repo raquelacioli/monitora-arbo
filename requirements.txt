@@ -1,5 +1,6 @@
-streamlit
-pandas
+streamlit==1.38.0
+starlette==0.38.2
+pandas>=2.0.0
 numpy
 google-cloud-storage
 setuptools
