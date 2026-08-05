@@ -503,7 +503,12 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
         if not _HAS_SHAPELY:
             st.caption("Sem shapely → contorno aparece, mas **sem** máscara cinza. (opcional)")
 
-   with st.expander("🔍 Diagnóstico do ambiente (opcional)", expanded=False):
+   if not HAS_SHAPELY:
+            st.caption("Sem shapely -> contorno aparece, mas **sem** máscara cinza. (opcional)")
+
+    # =======================
+    # VE - últimos 60 dias (empilhado)
+    # =======================
     import sys
     st.write("Python:", sys.version)
     st.write("Exe:", sys.executable)
