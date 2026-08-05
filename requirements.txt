@@ -10,3 +10,5 @@ streamlit-folium
 geopandas
 pyrebase4
 simpledbf
+odfpy
+openpyxl
