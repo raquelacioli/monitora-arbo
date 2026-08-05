@@ -462,7 +462,7 @@ def plot_mapa_pontos(df_addr: pd.DataFrame, col_addr: str = "ENDERECO_BR", titul
 # ==============================
 # Visualização principal
 # ==============================
-def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
+def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None, user_email=None):
     with st.expander("🧭 Máscara/contorno do DS VII (opcional)"):
         up = st.file_uploader("Envie o GeoJSON **ou KML** dos Distritos Sanitários do Recife",
                               type=["geojson","json","kml"], key="up_ds7_geojson")
@@ -504,9 +504,9 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
         plot_mapa_pontos(df_va, col_addr="ENDERECO_BR", titulo="VA — Últimos 15 dias")
 
     # =======================
-    # Casos sem encerramento
+    # Casos sem encerramento (Exclusivo para Vigilância Epidemiológica)
     # =======================
-    if df_sem_encerramento is not None and not df_sem_encerramento.empty:
+    if user_email == EMAIL_VE and df_sem_encerramento is not None and not df_sem_encerramento.empty:
         st.subheader("🦠 Casos sem encerramento (visão atual)")
         st.metric("Total de registros", f"{len(df_sem_encerramento)}")
         st.dataframe(formatar_datas_para_str_ddmmaaaa(df_sem_encerramento), use_container_width=True)
@@ -626,7 +626,7 @@ def processamento(user_email):
             else:
                 st.info("Arquivos processados apenas para visualização. Nenhum dado foi salvo.")
 
-            exibir_dados(df_ve, df_va, df_sem_encerramento)
+            exibir_dados(df_ve, df_va, df_sem_encerramento, user_email=user_email)
         except Exception as e:
             st.error(f"Erro ao processar os arquivos: {e}")
 
@@ -646,7 +646,7 @@ def processamento(user_email):
 
             df_sem_encerramento = adicionar_endereco_br(remover_colunas_duplicadas(df_sem_encerramento))
 
-            exibir_dados(df_ve, df_va, df_sem_encerramento)
+            exibir_dados(df_ve, df_va, df_sem_encerramento, user_email=user_email)
         except FileNotFoundError:
             st.warning("Nenhum dado salvo foi encontrado.")
 
