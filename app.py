@@ -1,6 +1,7 @@
 # app.py
 # pyright: reportMissingImports=false
 import streamlit as st
+import importlib.util
 import pandas as pd
 import pyrebase
 import os
@@ -505,7 +506,7 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None):
         import sys, pkgutil
         st.write("Python:", sys.version)
         st.write("Exe:", sys.executable)
-        for pkg in ["folium","streamlit_folium","geopy","shapely","fastkml","altair","requests"]:
+        st.write(f"{pkg}?", importlib.util.find_spec(pkg) is not None)
         import importlib.util
         st.write(f"{pkg}?", importlib.util.find_spec(pkg) is not None)
 
