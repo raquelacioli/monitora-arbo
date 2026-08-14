@@ -198,10 +198,10 @@ def _save_geocache(df: pd.DataFrame):
     df.drop_duplicates("ENDERECO_BR").to_csv(GEOCACHE_PATH, index=False)
 
 @st.cache_data(show_spinner=False)
-def _geocode_many(addresses, max_new: int = 100) -> pd.DataFrame:
+def _geocode_many(addresses, max_new: int = 20) -> pd.DataFrame:
     if not _HAS_GEOPY:
         return pd.DataFrame(columns=["ENDERECO_BR","lat","lon"])
-    geolocator = Nominatim(user_agent="monitora-arbo/1.0 (contato: vigilanciaambientalds7@gmail.com)", timeout=10)
+    geolocator = Nominatim(user_agent="monitora-arbo/1.0 (contato: vigilanciaambientalds7@gmail.com)", timeout=5)
     geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1)
     rows = []
     for i, addr in enumerate(addresses):
@@ -225,7 +225,7 @@ def _ensure_latlon_rows(df_addr: pd.DataFrame, col_addr: str = "ENDERECO_BR") ->
     merged = counts.merge(cache, on="ENDERECO_BR", how="left")
     missing = merged[merged["lat"].isna()]["ENDERECO_BR"].tolist()
     if missing and _HAS_GEOPY:
-        new_geo = _geocode_many(missing, max_new=100)
+        new_geo = _geocode_many(tuple(missing), max_new=20)
         if not new_geo.empty:
             cache = pd.concat([cache, new_geo], ignore_index=True).drop_duplicates("ENDERECO_BR", keep="first")
             _save_geocache(cache)
@@ -482,7 +482,7 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None, user_email=No
             st.caption("Sem shapely → contorno aparece, mas **sem** máscara cinza. (opcional)")
 
     # =======================
-    # VE - últimos 60 dias
+    # VE - últimos 60 dias (Sem o mapa pesado!)
     # =======================
     if df_ve is not None and not df_ve.empty:
         st.subheader("🦠 Vigilância Epidemiológica (VE) — Últimos 60 dias")
@@ -490,10 +490,9 @@ def exibir_dados(df_ve=None, df_va=None, df_sem_encerramento=None, user_email=No
         st.caption("Amostra dos dados (últimos 60 dias)")
         st.dataframe(formatar_datas_para_str_ddmmaaaa(df_ve), use_container_width=True)
         plot_histograma_semana(df_ve, data_col="DT_SIN_PRI", titulo="VE — Total de casos por Semana Epidemiológica (período mostrado)")
-        plot_mapa_pontos(df_ve, col_addr="ENDERECO_BR", titulo="VE — Últimos 60 dias")
 
     # =======================
-    # VA — últimos 15 dias
+    # VA — últimos 15 dias (Com mapa mantido)
     # =======================
     if df_va is not None and not df_va.empty:
         st.subheader("🦠 Vigilância Ambiental (VA) — Últimos 15 dias")
